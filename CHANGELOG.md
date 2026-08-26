@@ -14,6 +14,9 @@ All notable changes to this project are documented here.
 - Added post-save Yes / No prompt asking whether the saved file should be opened.
 - Opening a saved file is delegated to the default Windows file association.
 - The application exits after the post-save choice.
+- Added a complete `MANUAL.md` user manual for GUI, CLI, installation, updates, configuration, logging, and troubleshooting limitations.
+- Hardened `upgrade.cmd` validation so the version returned by the root `ytsubs` launcher must exactly match the version declared in `pyproject.toml`.
+- Prepared 1.02 as the first stable release on `main`.
 
 ## 1.01 - 27.08.2026
 
