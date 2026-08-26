@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ytsubs"
+version = "1.00"
+description = "Lightweight CLI and GUI tool for downloading original YouTube subtitles as TXT or SRT."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "youtube-transcript-api>=1.2.4,<2",
+  "yt-dlp>=2025.1.1",
+]
+
+[project.scripts]
+ytsubs = "ytsubs:main"
+
+[tool.setuptools]
+py-modules = ["ytsubs"]
