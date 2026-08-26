@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YouTubeSubs 1.01 - small YouTube subtitle downloader (CLI + GUI)."""
+"""YouTubeSubs 1.02 - small YouTube subtitle downloader (CLI + GUI)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import socket
 import sys
 import threading
 import time
@@ -19,10 +20,15 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import SRTFormatter, TextFormatter
 from yt_dlp import YoutubeDL
 
-VERSION = "1.01"
+VERSION = "1.02"
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 DEFAULT_STATS = {"metadata": 0.8, "transcripts": 1.0, "download": 0.8, "format": 0.1, "save": 0.1}
 EXIT_OK, EXIT_USAGE, EXIT_NO_SUBS, EXIT_API, EXIT_OUTPUT = 0, 2, 3, 4, 5
+GUI_PORT = 45871
+
+
+class CancelledError(Exception):
+    pass
 
 
 def app_dir() -> Path:
@@ -128,11 +134,17 @@ class VideoInfo:
 
 
 class Engine:
-    def __init__(self, phase_callback=None):
+    def __init__(self, phase_callback=None, cancel_event: threading.Event | None = None):
         self.api = YouTubeTranscriptApi()
         self.phase_callback = phase_callback or (lambda *_: None)
+        self.cancel_event = cancel_event
+
+    def _check_cancel(self) -> None:
+        if self.cancel_event and self.cancel_event.is_set():
+            raise CancelledError()
 
     def _phase(self, name: str) -> None:
+        self._check_cancel()
         logging.debug("phase=%s", name)
         self.phase_callback(name)
 
@@ -140,7 +152,9 @@ class Engine:
         self._phase("metadata")
         opts = {"quiet": True, "no_warnings": True, "skip_download": True}
         with YoutubeDL(opts) as ydl:
-            return ydl.extract_info(canonical_url(video_id), download=False) or {}
+            data = ydl.extract_info(canonical_url(video_id), download=False) or {}
+        self._check_cancel()
+        return data
 
     @staticmethod
     def _match_language_hint(hint: str, tracks: list[Track]) -> str | None:
@@ -161,26 +175,26 @@ class Engine:
         metadata = {}
         try:
             metadata = self.metadata(video_id)
+        except CancelledError:
+            raise
         except Exception as exc:
             logging.warning("Metadata lookup failed: %s", exc)
         self._phase("transcripts")
         items = list(self.api.list(video_id))
+        self._check_cancel()
         if not items:
             raise LookupError("This video has no available subtitles.")
         tracks = [Track(item.language, item.language_code, bool(item.is_generated)) for item in items]
-
-        # Deterministic original-language heuristic:
-        # 1) yt-dlp language metadata when it matches a real track;
-        # 2) first generated track, normally generated from spoken audio;
-        # 3) first manual track returned by YouTube.
         original = self._match_language_hint(str(metadata.get("language") or ""), tracks)
         if original is None:
             original = next((track.code for track in tracks if track.generated), tracks[0].code)
         return VideoInfo(video_id, str(metadata.get("title") or video_id), tracks, original)
 
     def select_track(self, info: VideoInfo, lang: str | None):
+        self._check_cancel()
         code = lang or info.original_code
         matches = [item for item in self.api.list(info.video_id) if item.language_code.lower() == code.lower()]
+        self._check_cancel()
         if not matches:
             raise LookupError(f"No subtitle track is available for language '{code}'.")
         return next((item for item in matches if not item.is_generated), matches[0])
@@ -188,8 +202,11 @@ class Engine:
     def fetch(self, info: VideoInfo, fmt: str, lang: str | None = None) -> str:
         self._phase("download")
         transcript = self.select_track(info, lang).fetch()
+        self._check_cancel()
         self._phase("format")
-        return SRTFormatter().format_transcript(transcript) if fmt == "srt" else TextFormatter().format_transcript(transcript)
+        result = SRTFormatter().format_transcript(transcript) if fmt == "srt" else TextFormatter().format_transcript(transcript)
+        self._check_cancel()
+        return result
 
 
 def write_output(text: str, output: str | None) -> None:
@@ -210,9 +227,8 @@ def cli(argv: list[str]) -> int:
     parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     args = parser.parse_args(argv)
     try:
-        engine = Engine()
-        info = engine.analyze(args.video)
-        text = engine.fetch(info, args.format, args.lang)
+        info = Engine().analyze(args.video)
+        text = Engine().fetch(info, args.format, args.lang)
     except ValueError as exc:
         print(f"ytsubs: {exc}", file=sys.stderr)
         return EXIT_USAGE
@@ -231,28 +247,76 @@ def cli(argv: list[str]) -> int:
     return EXIT_OK
 
 
+def center_window(window) -> None:
+    window.update_idletasks()
+    width = window.winfo_width()
+    height = window.winfo_height()
+    screen_w = window.winfo_screenwidth()
+    screen_h = window.winfo_screenheight()
+    x = max(0, (screen_w - width) // 2)
+    y = max(0, (screen_h - height) // 2)
+    window.geometry(f"+{x}+{y}")
+
+
 def gui() -> int:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
+
+    activation_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        activation_socket.bind(("127.0.0.1", GUI_PORT))
+    except OSError:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+                sender.sendto(b"ACTIVATE", ("127.0.0.1", GUI_PORT))
+        except OSError:
+            pass
+        return EXIT_OK
 
     config = load_config()
     phase_stats = config["phase_seconds"]
     root = tk.Tk()
     root.title(f"YouTubeSubs {VERSION}")
     root.resizable(False, False)
-    frame = ttk.Frame(root, padding=14)
-    frame.grid()
 
     url_var = tk.StringVar()
     lang_var = tk.StringVar(value="Auto / Original")
     fmt_var = tk.StringVar(value="txt")
     status_var = tk.StringVar(value="Enter a YouTube URL or video ID.")
-    eta_var = tk.StringVar(value="")
-    progress_var = tk.DoubleVar(value=0)
-    state = {"info": None, "timer": None, "phase": None, "phase_start": 0.0, "completed": 0.0, "busy": False, "lang_map": {}}
-    phases = ["metadata", "transcripts", "download", "format", "save"]
-    labels = {"metadata": "Reading video information...", "transcripts": "Finding available subtitles...", "download": "Downloading subtitles...", "format": "Creating output...", "save": "Saving file..."}
+    state = {"info": None, "timer": None, "lang_map": {}, "dialog": None, "closing": False}
 
+    def bring_to_front() -> None:
+        if state["closing"]:
+            return
+        try:
+            root.deiconify()
+            root.lift()
+            root.attributes("-topmost", True)
+            root.after(150, lambda: root.attributes("-topmost", False))
+            root.focus_force()
+            dialog = state.get("dialog")
+            if dialog and dialog.winfo_exists():
+                dialog.lift()
+                dialog.focus_force()
+        except tk.TclError:
+            pass
+
+    def activation_listener() -> None:
+        while not state["closing"]:
+            try:
+                activation_socket.settimeout(0.5)
+                data, _ = activation_socket.recvfrom(64)
+                if data == b"ACTIVATE":
+                    root.after(0, bring_to_front)
+            except socket.timeout:
+                continue
+            except OSError:
+                return
+
+    threading.Thread(target=activation_listener, daemon=True).start()
+
+    frame = ttk.Frame(root, padding=14)
+    frame.grid()
     ttk.Label(frame, text="YouTube URL / Video ID").grid(row=0, column=0, columnspan=2, sticky="w")
     url_entry = ttk.Entry(frame, textvariable=url_var, width=66)
     url_entry.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 10))
@@ -263,93 +327,162 @@ def gui() -> int:
     fmt_frame.grid(row=3, column=1, sticky="e")
     ttk.Radiobutton(fmt_frame, text="TXT", variable=fmt_var, value="txt").grid(row=0, column=0)
     ttk.Radiobutton(fmt_frame, text="SRT", variable=fmt_var, value="srt").grid(row=0, column=1)
-    ttk.Progressbar(frame, variable=progress_var, maximum=100, length=500).grid(row=4, column=0, columnspan=2, sticky="ew", pady=(4, 4))
-    ttk.Label(frame, textvariable=status_var).grid(row=5, column=0, columnspan=2, sticky="w")
-    ttk.Label(frame, textvariable=eta_var).grid(row=6, column=0, columnspan=2, sticky="w")
+    ttk.Label(frame, textvariable=status_var, wraplength=500).grid(row=4, column=0, columnspan=2, sticky="w", pady=(2, 6))
     buttons = ttk.Frame(frame)
-    buttons.grid(row=7, column=0, columnspan=2, sticky="e", pady=(12, 0))
+    buttons.grid(row=5, column=0, columnspan=2, sticky="e", pady=(8, 0))
 
-    def phase(name: str) -> None:
-        now = time.monotonic()
-        old = state["phase"]
-        if old:
-            duration = max(0.01, now - state["phase_start"])
-            old_avg = float(phase_stats.get(old, DEFAULT_STATS[old]))
-            phase_stats[old] = round(old_avg * 0.75 + duration * 0.25, 3)
-            state["completed"] += old_avg
-        state["phase"] = name
-        state["phase_start"] = now
-        root.after(0, lambda: status_var.set(labels.get(name, name)))
+    def close_app() -> None:
+        state["closing"] = True
+        dialog = state.get("dialog")
+        if dialog and hasattr(dialog, "cancel_event"):
+            dialog.cancel_event.set()
+        try:
+            activation_socket.close()
+        except OSError:
+            pass
+        root.destroy()
 
-    def animate() -> None:
-        if state["busy"] and state["phase"]:
-            total = sum(float(phase_stats.get(name, DEFAULT_STATS[name])) for name in phases)
-            avg = float(phase_stats.get(state["phase"], 0.5))
-            elapsed = time.monotonic() - state["phase_start"]
-            partial = avg * min(0.92, elapsed / max(avg, 0.05))
-            progress_var.set(min(96.0, (state["completed"] + partial) / max(total, 0.1) * 100))
-            if config.get("samples", 0) >= 3:
-                eta = max(0.0, total - state["completed"] - min(elapsed, avg))
-                eta_var.set(f"Estimated time remaining: ~{max(1, round(eta))} s")
-            root.after(80, animate)
+    class ProgressDialog:
+        def __init__(self, title: str, phases: list[str], labels: dict[str, str], on_cancel):
+            self.cancel_event = threading.Event()
+            self.phases = phases
+            self.labels = labels
+            self.phase = None
+            self.phase_start = 0.0
+            self.completed = 0.0
+            self.on_cancel_callback = on_cancel
+            self.window = tk.Toplevel(root)
+            state["dialog"] = self.window
+            self.window.title(title)
+            self.window.resizable(False, False)
+            self.window.transient(root)
+            self.window.protocol("WM_DELETE_WINDOW", close_app)
+            body = ttk.Frame(self.window, padding=14)
+            body.grid()
+            self.status = tk.StringVar(value=title + "...")
+            self.eta = tk.StringVar(value="")
+            self.progress = tk.DoubleVar(value=1)
+            ttk.Label(body, textvariable=self.status, width=54).grid(row=0, column=0, sticky="w")
+            ttk.Progressbar(body, variable=self.progress, maximum=100, length=420).grid(row=1, column=0, sticky="ew", pady=(8, 6))
+            ttk.Label(body, textvariable=self.eta).grid(row=2, column=0, sticky="w")
+            ttk.Button(body, text="Cancel", command=self.cancel).grid(row=3, column=0, sticky="e", pady=(10, 0))
+            self.window.update_idletasks()
+            center_window(self.window)
+            self.window.grab_set()
+            self.window.focus_force()
+            self.animate()
 
-    def finish_stats() -> None:
-        if state["phase"]:
-            duration = max(0.01, time.monotonic() - state["phase_start"])
-            name = state["phase"]
-            phase_stats[name] = round(float(phase_stats.get(name, DEFAULT_STATS[name])) * 0.75 + duration * 0.25, 3)
-        config["samples"] = int(config.get("samples", 0)) + 1
-        config["phase_seconds"] = phase_stats
-        save_config(config)
+        def set_phase(self, name: str) -> None:
+            now = time.monotonic()
+            old = self.phase
+            if old:
+                duration = max(0.01, now - self.phase_start)
+                old_avg = float(phase_stats.get(old, DEFAULT_STATS.get(old, 0.5)))
+                phase_stats[old] = round(old_avg * 0.75 + duration * 0.25, 3)
+                self.completed += old_avg
+            self.phase = name
+            self.phase_start = now
+            root.after(0, lambda: self.status.set(self.labels.get(name, name)))
 
-    def analysis_done(info: VideoInfo) -> None:
+        def animate(self) -> None:
+            if not self.window.winfo_exists():
+                return
+            if self.phase:
+                total = sum(float(phase_stats.get(name, DEFAULT_STATS.get(name, 0.5))) for name in self.phases)
+                avg = float(phase_stats.get(self.phase, DEFAULT_STATS.get(self.phase, 0.5)))
+                elapsed = time.monotonic() - self.phase_start
+                partial = avg * min(0.92, elapsed / max(avg, 0.05))
+                self.progress.set(min(96.0, (self.completed + partial) / max(total, 0.1) * 100))
+                if config.get("samples", 0) >= 3:
+                    eta = max(0.0, total - self.completed - min(elapsed, avg))
+                    self.eta.set(f"Estimated time remaining: ~{max(1, round(eta))} s")
+            self.window.after(80, self.animate)
+
+        def cancel(self) -> None:
+            self.cancel_event.set()
+            self.close()
+            self.on_cancel_callback()
+
+        def finish_stats(self) -> None:
+            if self.phase:
+                duration = max(0.01, time.monotonic() - self.phase_start)
+                avg = float(phase_stats.get(self.phase, DEFAULT_STATS.get(self.phase, 0.5)))
+                phase_stats[self.phase] = round(avg * 0.75 + duration * 0.25, 3)
+            config["samples"] = int(config.get("samples", 0)) + 1
+            config["phase_seconds"] = phase_stats
+            save_config(config)
+
+        def close(self) -> None:
+            if self.window.winfo_exists():
+                try:
+                    self.window.grab_release()
+                except tk.TclError:
+                    pass
+                self.window.destroy()
+            state["dialog"] = None
+
+    def analysis_cancelled() -> None:
+        status_var.set("Analysis cancelled.")
+        download_btn.state(["disabled"])
+
+    def analysis_done(info: VideoInfo, dialog: ProgressDialog) -> None:
+        if dialog.cancel_event.is_set() or state["closing"]:
+            return
+        dialog.finish_stats()
+        dialog.close()
         state["info"] = info
-        state["busy"] = False
-        progress_var.set(0)
-        eta_var.set("")
-        status_var.set(f"Ready: {info.title}")
         choices = info.language_choices()
         state["lang_map"] = dict(choices)
         lang_box["values"] = ["Auto / Original"] + [label for label, _ in choices]
         lang_var.set("Auto / Original")
+        status_var.set(f"Ready: {info.title}")
         download_btn.state(["!disabled"])
+        root.lift()
 
-    def analysis_failed(error: str) -> None:
+    def analysis_failed(error: str, dialog: ProgressDialog) -> None:
+        if dialog.cancel_event.is_set() or state["closing"]:
+            return
+        dialog.close()
         state["info"] = None
-        state["busy"] = False
-        progress_var.set(0)
-        eta_var.set("")
-        status_var.set(error)
         lang_box["values"] = ["Auto / Original"]
         download_btn.state(["disabled"])
-
-    def run_analysis(value: str) -> None:
-        try:
-            info = Engine(phase).analyze(value)
-            root.after(0, lambda: analysis_done(info))
-        except Exception as exc:
-            error = str(exc)
-            root.after(0, lambda: analysis_failed(error))
+        status_var.set(error)
+        messagebox.showerror("YouTubeSubs", error, parent=root)
 
     def analyze_now() -> None:
         value = url_var.get().strip()
-        if not value:
+        if not value or state.get("dialog"):
             return
         try:
             extract_video_id(value)
         except ValueError:
             return
-        state.update({"busy": True, "phase": None, "completed": 0.0})
-        progress_var.set(1)
-        eta_var.set("")
-        threading.Thread(target=run_analysis, args=(value,), daemon=True).start()
-        animate()
+        state["info"] = None
+        download_btn.state(["disabled"])
+        labels = {"metadata": "Reading video information...", "transcripts": "Finding available subtitles..."}
+        dialog = ProgressDialog("Analyzing video", ["metadata", "transcripts"], labels, analysis_cancelled)
+
+        def worker() -> None:
+            try:
+                info = Engine(dialog.set_phase, dialog.cancel_event).analyze(value)
+                root.after(0, lambda: analysis_done(info, dialog))
+            except CancelledError:
+                pass
+            except Exception as exc:
+                error = str(exc)
+                root.after(0, lambda: analysis_failed(error, dialog))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def schedule_analysis(*_) -> None:
         if state["timer"]:
             root.after_cancel(state["timer"])
         download_btn.state(["disabled"])
         state["timer"] = root.after(500, analyze_now)
+
+    def download_cancelled() -> None:
+        status_var.set("Download cancelled.")
+        download_btn.state(["!disabled"])
 
     def download() -> None:
         info: VideoInfo | None = state["info"]
@@ -359,48 +492,71 @@ def gui() -> int:
         selected_label = lang_var.get()
         selected_lang = None if selected_label == "Auto / Original" else state["lang_map"].get(selected_label)
         proposed = clean_filename(info.title) + "." + fmt
-        path = filedialog.asksaveasfilename(initialfile=proposed, defaultextension="." + fmt, filetypes=[(fmt.upper(), "*." + fmt), ("All files", "*.*")])
+        path = filedialog.asksaveasfilename(
+            parent=root,
+            initialfile=proposed,
+            defaultextension="." + fmt,
+            filetypes=[(fmt.upper(), "*." + fmt), ("All files", "*.*")],
+        )
         if not path:
             return
+        labels = {"download": "Downloading subtitles...", "format": "Creating output...", "save": "Saving file..."}
+        dialog = ProgressDialog("Downloading subtitles", ["download", "format", "save"], labels, download_cancelled)
         download_btn.state(["disabled"])
-        state.update({"busy": True, "phase": None, "completed": 0.0})
-        progress_var.set(1)
-        eta_var.set("")
+
+        def done() -> None:
+            if dialog.cancel_event.is_set() or state["closing"]:
+                return
+            dialog.finish_stats()
+            dialog.close()
+            status_var.set(f"Saved: {path}")
+            open_file = messagebox.askyesno("YouTubeSubs", "Subtitles saved successfully.\n\nOpen the file?", parent=root)
+            if open_file:
+                try:
+                    os.startfile(path)
+                except OSError as exc:
+                    messagebox.showerror("YouTubeSubs", f"Unable to open the file:\n{exc}", parent=root)
+            close_app()
+
+        def failed(error: str) -> None:
+            if dialog.cancel_event.is_set() or state["closing"]:
+                return
+            dialog.close()
+            download_btn.state(["!disabled"])
+            status_var.set(error)
+            messagebox.showerror("YouTubeSubs", error, parent=root)
 
         def worker() -> None:
             try:
-                text = Engine(phase).fetch(info, fmt, selected_lang)
-                phase("save")
+                text = Engine(dialog.set_phase, dialog.cancel_event).fetch(info, fmt, selected_lang)
+                if dialog.cancel_event.is_set():
+                    raise CancelledError()
+                dialog.set_phase("save")
                 Path(path).write_text(text, encoding="utf-8")
-                root.after(0, lambda: done(path))
+                if dialog.cancel_event.is_set():
+                    try:
+                        Path(path).unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                    raise CancelledError()
+                root.after(0, done)
+            except CancelledError:
+                pass
             except Exception as exc:
                 error = str(exc)
                 root.after(0, lambda: failed(error))
 
         threading.Thread(target=worker, daemon=True).start()
-        animate()
-
-    def done(path: str) -> None:
-        finish_stats()
-        state["busy"] = False
-        progress_var.set(100)
-        eta_var.set("")
-        status_var.set(f"Saved: {path}")
-        download_btn.state(["!disabled"])
-
-    def failed(error: str) -> None:
-        state["busy"] = False
-        eta_var.set("")
-        download_btn.state(["!disabled"])
-        status_var.set(error)
-        messagebox.showerror("YouTubeSubs", error)
 
     download_btn = ttk.Button(buttons, text="Download", command=download)
     download_btn.grid(row=0, column=0, padx=(0, 8))
     download_btn.state(["disabled"])
-    ttk.Button(buttons, text="Cancel", command=root.destroy).grid(row=0, column=1)
+    ttk.Button(buttons, text="Cancel", command=close_app).grid(row=0, column=1)
+    root.protocol("WM_DELETE_WINDOW", close_app)
     url_var.trace_add("write", schedule_analysis)
     url_entry.focus_set()
+    root.update_idletasks()
+    center_window(root)
     root.mainloop()
     return EXIT_OK
 
