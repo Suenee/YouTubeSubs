@@ -16,6 +16,7 @@ Development takes place on the `devel` branch. Stable releases are published to 
 - Prefers a manual subtitle track in the selected/original language and falls back to an auto-generated track in the same language.
 - Suggests a safe output filename based on the video title.
 - Adaptive GUI progress estimation learns aggregate phase timings on the local computer.
+- Single-instance GUI behavior; a repeated launch activates the existing window.
 - Optional file logging modes: `off`, `single`, `all`.
 
 ## Requirements
@@ -55,13 +56,17 @@ Start without arguments from the repository root:
 ytsubs
 ```
 
-Enter a YouTube URL or video ID. The application analyzes the video after a short pause, loads the title and available subtitle tracks, and enables **Download** when the input is ready.
+The main window is centered on the desktop. Only one GUI instance is allowed. Starting `ytsubs` again while the GUI is already running activates and brings the existing window to the foreground.
 
-The language selector contains only subtitle languages actually found for the video. If both manual and auto-generated tracks exist for one language, they are shown as one language choice and the manual track is preferred.
+Enter a YouTube URL or video ID. After a short pause, analysis starts in a modal progress dialog. The dialog shows an approximate adaptive progress bar and, after enough local samples are available, an estimated time remaining. **Cancel** stops the workflow and returns to the main window. Closing the modal dialog with its window close button exits the whole application.
 
-The Download dialog proposes the video title as the filename and uses `.txt` or `.srt` according to the selected format. **Cancel** closes the window.
+After analysis, the language selector contains only subtitle languages actually found for the video. If both manual and auto-generated tracks exist for one language, they are shown as one language choice and the manual track is preferred.
 
-The progress bar is intentionally approximate. It uses learned local timing averages for metadata lookup, transcript discovery, download, formatting, and saving. Only aggregate timing data is stored; video URLs, IDs, titles, and transcript contents are not kept.
+Press **Download** and choose the output path. Downloading, formatting, and saving run in another modal progress dialog with the same Cancel behavior. A cancelled download does not intentionally leave a partial output file.
+
+After a successful save, YouTubeSubs asks whether the file should be opened. **Yes** passes the file to Windows using the current default file association. **No** closes the application without opening the file. The application exits after either choice.
+
+The progress estimate is intentionally approximate. It learns local timing averages for metadata lookup, transcript discovery, download, formatting, and saving. Only aggregate timing data is stored; video URLs, IDs, titles, and transcript contents are not kept.
 
 ## CLI
 
