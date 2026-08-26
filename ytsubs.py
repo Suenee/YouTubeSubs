@@ -22,19 +22,14 @@ from yt_dlp import YoutubeDL
 VERSION = "1.00"
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 DEFAULT_STATS = {"metadata": 0.8, "transcripts": 1.0, "download": 0.8, "format": 0.1, "save": 0.1}
-
-EXIT_OK = 0
-EXIT_USAGE = 2
-EXIT_NO_SUBS = 3
-EXIT_API = 4
-EXIT_OUTPUT = 5
+EXIT_OK, EXIT_USAGE, EXIT_NO_SUBS, EXIT_API, EXIT_OUTPUT = 0, 2, 3, 4, 5
 
 
 def app_dir() -> Path:
     base = os.environ.get("LOCALAPPDATA") or str(Path.home() / ".config")
-    p = Path(base) / "YouTubeSubs"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+    path = Path(base) / "YouTubeSubs"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def load_config() -> dict:
@@ -62,9 +57,8 @@ def setup_logging(mode: str) -> None:
     if mode == "off":
         logging.disable(logging.CRITICAL)
         return
-    logfile = app_dir() / "ytsubs.log"
     logging.basicConfig(
-        filename=logfile,
+        filename=app_dir() / "ytsubs.log",
         filemode="w" if mode == "single" else "a",
         level=logging.DEBUG,
         format="%(asctime)s %(levelname)s %(message)s",
@@ -76,20 +70,20 @@ def extract_video_id(value: str) -> str:
     if VIDEO_ID_RE.fullmatch(value):
         return value
     try:
-        u = urlparse(value)
+        parsed = urlparse(value)
     except ValueError as exc:
         raise ValueError("Invalid YouTube URL or video ID.") from exc
-    host = u.netloc.lower().split(":")[0]
+    host = parsed.netloc.lower().split(":")[0]
+    candidate = ""
     if host in {"youtu.be", "www.youtu.be"}:
-        candidate = u.path.strip("/").split("/")[0]
+        candidate = parsed.path.strip("/").split("/")[0]
     elif host.endswith("youtube.com"):
-        if u.path == "/watch":
-            candidate = parse_qs(u.query).get("v", [""])[0]
+        if parsed.path == "/watch":
+            candidate = parse_qs(parsed.query).get("v", [""])[0]
         else:
-            parts = [p for p in u.path.split("/") if p]
-            candidate = parts[1] if len(parts) >= 2 and parts[0] in {"shorts", "embed", "live"} else ""
-    else:
-        candidate = ""
+            parts = [part for part in parsed.path.split("/") if part]
+            if len(parts) >= 2 and parts[0] in {"shorts", "embed", "live"}:
+                candidate = parts[1]
     if not VIDEO_ID_RE.fullmatch(candidate):
         raise ValueError("Invalid YouTube URL or video ID.")
     return candidate
@@ -100,8 +94,8 @@ def canonical_url(video_id: str) -> str:
 
 
 def clean_filename(name: str) -> str:
-    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip().rstrip(". ")
-    return name[:180] or "youtube_subtitles"
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip().rstrip(". ")
+    return cleaned[:180] or "youtube_subtitles"
 
 
 @dataclass(frozen=True)
@@ -110,10 +104,6 @@ class Track:
     code: str
     generated: bool
 
-    @property
-    def label(self) -> str:
-        return f"{self.language} ({self.code}) — {'auto' if self.generated else 'manual'}"
-
 
 @dataclass
 class VideoInfo:
@@ -121,6 +111,20 @@ class VideoInfo:
     title: str
     tracks: list[Track]
     original_code: str
+
+    def language_choices(self) -> list[tuple[str, str]]:
+        grouped: dict[str, list[Track]] = {}
+        for track in self.tracks:
+            grouped.setdefault(track.code, []).append(track)
+        choices = []
+        for code, tracks in grouped.items():
+            kinds = []
+            if any(not track.generated for track in tracks):
+                kinds.append("manual")
+            if any(track.generated for track in tracks):
+                kinds.append("auto")
+            choices.append((f"{tracks[0].language} ({code}) — {' + '.join(kinds)}", code))
+        return choices
 
 
 class Engine:
@@ -138,50 +142,54 @@ class Engine:
         with YoutubeDL(opts) as ydl:
             return ydl.extract_info(canonical_url(video_id), download=False) or {}
 
+    @staticmethod
+    def _match_language_hint(hint: str, tracks: list[Track]) -> str | None:
+        if not hint:
+            return None
+        hint = hint.lower().replace("_", "-")
+        for track in tracks:
+            if track.code.lower().replace("_", "-") == hint:
+                return track.code
+        base = hint.split("-", 1)[0]
+        for track in tracks:
+            if track.code.lower().replace("_", "-").split("-", 1)[0] == base:
+                return track.code
+        return None
+
     def analyze(self, value: str) -> VideoInfo:
         video_id = extract_video_id(value)
-        meta = {}
+        metadata = {}
         try:
-            meta = self.metadata(video_id)
+            metadata = self.metadata(video_id)
         except Exception as exc:
             logging.warning("Metadata lookup failed: %s", exc)
         self._phase("transcripts")
-        transcript_list = self.api.list(video_id)
-        items = list(transcript_list)
+        items = list(self.api.list(video_id))
         if not items:
             raise LookupError("This video has no available subtitles.")
-        tracks = [Track(t.language, t.language_code, bool(t.is_generated)) for t in items]
+        tracks = [Track(item.language, item.language_code, bool(item.is_generated)) for item in items]
 
-        # Best deterministic original-language heuristic:
-        # 1) yt-dlp language metadata if it matches a real track;
-        # 2) first generated track (normally generated from spoken audio);
+        # Deterministic original-language heuristic:
+        # 1) yt-dlp language metadata when it matches a real track;
+        # 2) first generated track, normally generated from spoken audio;
         # 3) first manual track returned by YouTube.
-        meta_lang = str(meta.get("language") or "").lower()
-        codes = {t.code.lower(): t.code for t in tracks}
-        if meta_lang in codes:
-            original = codes[meta_lang]
-        else:
-            generated = next((t.code for t in tracks if t.generated), None)
-            original = generated or tracks[0].code
-        title = str(meta.get("title") or video_id)
-        return VideoInfo(video_id, title, tracks, original)
+        original = self._match_language_hint(str(metadata.get("language") or ""), tracks)
+        if original is None:
+            original = next((track.code for track in tracks if track.generated), tracks[0].code)
+        return VideoInfo(video_id, str(metadata.get("title") or video_id), tracks, original)
 
     def select_track(self, info: VideoInfo, lang: str | None):
-        transcript_list = self.api.list(info.video_id)
         code = lang or info.original_code
-        matches = [t for t in transcript_list if t.language_code.lower() == code.lower()]
+        matches = [item for item in self.api.list(info.video_id) if item.language_code.lower() == code.lower()]
         if not matches:
             raise LookupError(f"No subtitle track is available for language '{code}'.")
-        manual = next((t for t in matches if not t.is_generated), None)
-        return manual or matches[0]
+        return next((item for item in matches if not item.is_generated), matches[0])
 
     def fetch(self, info: VideoInfo, fmt: str, lang: str | None = None) -> str:
         self._phase("download")
-        fetched = self.select_track(info, lang).fetch()
+        transcript = self.select_track(info, lang).fetch()
         self._phase("format")
-        if fmt == "srt":
-            return SRTFormatter().format_transcript(fetched)
-        return TextFormatter().format_transcript(fetched)
+        return SRTFormatter().format_transcript(transcript) if fmt == "srt" else TextFormatter().format_transcript(transcript)
 
 
 def write_output(text: str, output: str | None) -> None:
@@ -194,13 +202,13 @@ def write_output(text: str, output: str | None) -> None:
 
 
 def cli(argv: list[str]) -> int:
-    p = argparse.ArgumentParser(prog="ytsubs", description="Download original YouTube subtitles as TXT or SRT.")
-    p.add_argument("video", help="YouTube URL or 11-character video ID")
-    p.add_argument("--format", choices=("txt", "srt"), default="txt")
-    p.add_argument("--lang", help="Subtitle language code, e.g. en or cs. No automatic translation is used.")
-    p.add_argument("-o", "--output", help="Write output to a file instead of stdout")
-    p.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
-    args = p.parse_args(argv)
+    parser = argparse.ArgumentParser(prog="ytsubs", description="Download original YouTube subtitles as TXT or SRT.")
+    parser.add_argument("video", help="YouTube URL or 11-character video ID")
+    parser.add_argument("--format", choices=("txt", "srt"), default="txt")
+    parser.add_argument("--lang", help="Subtitle language code, e.g. en or cs. No automatic translation is used.")
+    parser.add_argument("-o", "--output", help="Write output to a file instead of stdout")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
+    args = parser.parse_args(argv)
     try:
         engine = Engine()
         info = engine.analyze(args.video)
@@ -241,15 +249,9 @@ def gui() -> int:
     status_var = tk.StringVar(value="Enter a YouTube URL or video ID.")
     eta_var = tk.StringVar(value="")
     progress_var = tk.DoubleVar(value=0)
-    state = {"info": None, "timer": None, "phase": None, "phase_start": 0.0, "completed": 0.0, "busy": False}
+    state = {"info": None, "timer": None, "phase": None, "phase_start": 0.0, "completed": 0.0, "busy": False, "lang_map": {}}
     phases = ["metadata", "transcripts", "download", "format", "save"]
-    labels = {
-        "metadata": "Reading video information...",
-        "transcripts": "Finding available subtitles...",
-        "download": "Downloading subtitles...",
-        "format": "Creating output...",
-        "save": "Saving file...",
-    }
+    labels = {"metadata": "Reading video information...", "transcripts": "Finding available subtitles...", "download": "Downloading subtitles...", "format": "Creating output...", "save": "Saving file..."}
 
     ttk.Label(frame, text="YouTube URL / Video ID").grid(row=0, column=0, columnspan=2, sticky="w")
     url_entry = ttk.Entry(frame, textvariable=url_var, width=66)
@@ -267,7 +269,7 @@ def gui() -> int:
     buttons = ttk.Frame(frame)
     buttons.grid(row=7, column=0, columnspan=2, sticky="e", pady=(12, 0))
 
-    def phase(name: str):
+    def phase(name: str) -> None:
         now = time.monotonic()
         old = state["phase"]
         if old:
@@ -279,20 +281,19 @@ def gui() -> int:
         state["phase_start"] = now
         root.after(0, lambda: status_var.set(labels.get(name, name)))
 
-    def animate():
+    def animate() -> None:
         if state["busy"] and state["phase"]:
-            total = sum(float(phase_stats.get(p, DEFAULT_STATS[p])) for p in phases)
+            total = sum(float(phase_stats.get(name, DEFAULT_STATS[name])) for name in phases)
             avg = float(phase_stats.get(state["phase"], 0.5))
             elapsed = time.monotonic() - state["phase_start"]
             partial = avg * min(0.92, elapsed / max(avg, 0.05))
-            pct = min(96.0, (state["completed"] + partial) / max(total, 0.1) * 100)
-            progress_var.set(pct)
+            progress_var.set(min(96.0, (state["completed"] + partial) / max(total, 0.1) * 100))
             if config.get("samples", 0) >= 3:
                 eta = max(0.0, total - state["completed"] - min(elapsed, avg))
                 eta_var.set(f"Estimated time remaining: ~{max(1, round(eta))} s")
             root.after(80, animate)
 
-    def finish_stats():
+    def finish_stats() -> None:
         if state["phase"]:
             duration = max(0.01, time.monotonic() - state["phase_start"])
             name = state["phase"]
@@ -301,25 +302,19 @@ def gui() -> int:
         config["phase_seconds"] = phase_stats
         save_config(config)
 
-    def run_analysis(value: str):
-        try:
-            info = Engine(phase).analyze(value)
-            root.after(0, lambda: analysis_done(info))
-        except Exception as exc:
-            root.after(0, lambda: analysis_failed(str(exc)))
-
-    def analysis_done(info: VideoInfo):
+    def analysis_done(info: VideoInfo) -> None:
         state["info"] = info
         state["busy"] = False
         progress_var.set(0)
         eta_var.set("")
         status_var.set(f"Ready: {info.title}")
-        values = ["Auto / Original"] + [t.label for t in info.tracks]
-        lang_box["values"] = values
+        choices = info.language_choices()
+        state["lang_map"] = dict(choices)
+        lang_box["values"] = ["Auto / Original"] + [label for label, _ in choices]
         lang_var.set("Auto / Original")
         download_btn.state(["!disabled"])
 
-    def analysis_failed(error: str):
+    def analysis_failed(error: str) -> None:
         state["info"] = None
         state["busy"] = False
         progress_var.set(0)
@@ -328,13 +323,15 @@ def gui() -> int:
         lang_box["values"] = ["Auto / Original"]
         download_btn.state(["disabled"])
 
-    def schedule_analysis(*_):
-        if state["timer"]:
-            root.after_cancel(state["timer"])
-        download_btn.state(["disabled"])
-        state["timer"] = root.after(500, analyze_now)
+    def run_analysis(value: str) -> None:
+        try:
+            info = Engine(phase).analyze(value)
+            root.after(0, lambda: analysis_done(info))
+        except Exception as exc:
+            error = str(exc)
+            root.after(0, lambda: analysis_failed(error))
 
-    def analyze_now():
+    def analyze_now() -> None:
         value = url_var.get().strip()
         if not value:
             return
@@ -348,19 +345,21 @@ def gui() -> int:
         threading.Thread(target=run_analysis, args=(value,), daemon=True).start()
         animate()
 
-    def chosen_lang() -> str | None:
-        if lang_var.get() == "Auto / Original":
-            return None
-        m = re.search(r"\(([^()]+)\)", lang_var.get())
-        return m.group(1) if m else None
+    def schedule_analysis(*_) -> None:
+        if state["timer"]:
+            root.after_cancel(state["timer"])
+        download_btn.state(["disabled"])
+        state["timer"] = root.after(500, analyze_now)
 
-    def download():
+    def download() -> None:
         info: VideoInfo | None = state["info"]
         if not info:
             return
-        ext = fmt_var.get()
-        proposed = clean_filename(info.title) + "." + ext
-        path = filedialog.asksaveasfilename(initialfile=proposed, defaultextension="." + ext, filetypes=[(ext.upper(), "*." + ext), ("All files", "*.*")])
+        fmt = fmt_var.get()
+        selected_label = lang_var.get()
+        selected_lang = None if selected_label == "Auto / Original" else state["lang_map"].get(selected_label)
+        proposed = clean_filename(info.title) + "." + fmt
+        path = filedialog.asksaveasfilename(initialfile=proposed, defaultextension="." + fmt, filetypes=[(fmt.upper(), "*." + fmt), ("All files", "*.*")])
         if not path:
             return
         download_btn.state(["disabled"])
@@ -368,20 +367,20 @@ def gui() -> int:
         progress_var.set(1)
         eta_var.set("")
 
-        def worker():
+        def worker() -> None:
             try:
-                engine = Engine(phase)
-                text = engine.fetch(info, ext, chosen_lang())
+                text = Engine(phase).fetch(info, fmt, selected_lang)
                 phase("save")
                 Path(path).write_text(text, encoding="utf-8")
                 root.after(0, lambda: done(path))
             except Exception as exc:
-                root.after(0, lambda: failed(str(exc)))
+                error = str(exc)
+                root.after(0, lambda: failed(error))
 
         threading.Thread(target=worker, daemon=True).start()
         animate()
 
-    def done(path: str):
+    def done(path: str) -> None:
         finish_stats()
         state["busy"] = False
         progress_var.set(100)
@@ -389,12 +388,12 @@ def gui() -> int:
         status_var.set(f"Saved: {path}")
         download_btn.state(["!disabled"])
 
-    def failed(error: str):
+    def failed(error: str) -> None:
         state["busy"] = False
         eta_var.set("")
         download_btn.state(["!disabled"])
-        messagebox.showerror("YouTubeSubs", error)
         status_var.set(error)
+        messagebox.showerror("YouTubeSubs", error)
 
     download_btn = ttk.Button(buttons, text="Download", command=download)
     download_btn.grid(row=0, column=0, padx=(0, 8))
@@ -409,9 +408,7 @@ def gui() -> int:
 def main() -> int:
     config = load_config()
     setup_logging(str(config.get("logging", "off")))
-    if len(sys.argv) == 1:
-        return gui()
-    return cli(sys.argv[1:])
+    return gui() if len(sys.argv) == 1 else cli(sys.argv[1:])
 
 
 if __name__ == "__main__":
