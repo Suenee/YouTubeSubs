@@ -37,23 +37,19 @@ git switch devel
 upgrade.cmd
 ```
 
-`upgrade.cmd` checks the remote version of itself first, runs a newer remote copy when necessary, refuses to overwrite tracked local changes, updates the current branch, creates `.venv`, updates dependencies, installs the CLI command, and validates the installation.
+`upgrade.cmd` checks the remote version of itself first, runs a newer remote copy when necessary, refuses to overwrite tracked local changes, updates the current branch, creates `.venv`, updates dependencies, installs the Python package, and validates the root launcher.
 
-After installation:
+No global `PATH` modification is required. The repository contains `ytsubs.cmd`, which launches the executable from `.venv`.
+
+From the repository root:
 
 ```cmd
 ytsubs --version
 ```
 
-If the global shell cannot see the virtual-environment command, run:
-
-```cmd
-.venv\Scripts\ytsubs.exe --version
-```
-
 ## GUI
 
-Start without arguments:
+Start without arguments from the repository root:
 
 ```cmd
 ytsubs
@@ -61,14 +57,7 @@ ytsubs
 
 Enter a YouTube URL or video ID. The application analyzes the video after a short pause, loads the title and available subtitle tracks, and enables **Download** when the input is ready.
 
-The language selector contains only subtitle tracks actually found for the video, for example:
-
-```text
-Auto / Original
-English (en) — manual
-English (en) — auto
-Czech (cs) — manual
-```
+The language selector contains only subtitle languages actually found for the video. If both manual and auto-generated tracks exist for one language, they are shown as one language choice and the manual track is preferred.
 
 The Download dialog proposes the video title as the filename and uses `.txt` or `.srt` according to the selected format. **Cancel** closes the window.
 
