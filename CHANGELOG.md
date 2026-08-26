@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## 1.02 - 27.08.2026
+
+- Centered the main GUI window on the desktop.
+- Added single-instance GUI behavior with activation of the existing window on repeated launch.
+- Moved analysis progress into a modal dialog.
+- Moved download progress into a modal dialog.
+- Added Cancel support for analysis and download workflows.
+- Closing a progress dialog with the window close button exits the application.
+- Added adaptive progress and ETA display to modal progress dialogs.
+- Added post-save Yes / No prompt asking whether the saved file should be opened.
+- Opening a saved file is delegated to the default Windows file association.
+- The application exits after the post-save choice.
+
 ## 1.01 - 27.08.2026
 
 - Added `ytsubs.cmd` launcher in the project root.
