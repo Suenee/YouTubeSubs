@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## 1.01 - 27.08.2026
+
+- Added `ytsubs.cmd` launcher in the project root.
+- `ytsubs` can now be started directly from the repository root without changing `PATH` or activating `.venv`.
+- Updated `upgrade.cmd` validation to test the root launcher.
+
 ## 1.00 - 27.08.2026
 
 - Initial development version.
