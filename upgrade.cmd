@@ -51,7 +51,7 @@ if not exist ".venv\Scripts\python.exe" (
 
 echo === VALIDATION ===
 ".venv\Scripts\python.exe" -m py_compile ytsubs.py || (echo ERROR: Python syntax validation failed.& exit /b 20)
-".venv\Scripts\ytsubs.exe" --version || (echo ERROR: ytsubs command validation failed.& exit /b 21)
+call "%CD%\ytsubs.cmd" --version || (echo ERROR: Root ytsubs launcher validation failed.& exit /b 21)
 
 echo.
 echo YouTubeSubs update completed successfully on branch %BRANCH%.
