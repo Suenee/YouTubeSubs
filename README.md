@@ -2,94 +2,95 @@
 
 Lightweight Python CLI and GUI tool for downloading manual or auto-generated YouTube subtitles as TXT or SRT, without automatic translation.
 
-Development takes place on the `devel` branch. Stable releases are published to `main`.
+YouTubeSubs is designed for two workflows:
 
-## Features
+- a small Windows GUI for interactive downloads;
+- a clean CLI that writes transcript data to `stdout`, making it suitable for redirection, pipes, and automation.
+
+## Highlights
 
 - Accepts a full YouTube URL or an 11-character video ID.
-- GUI mode when started without parameters.
-- CLI mode when started with a video argument.
-- TXT output without timestamps.
-- SRT output with timestamps.
-- Output to stdout, a pipe, shell redirection, or an explicit file.
-- Discovers real subtitle tracks exposed by YouTube; automatic translation is never used.
-- Prefers a manual subtitle track in the selected/original language and falls back to an auto-generated track in the same language.
-- Suggests a safe output filename based on the video title.
-- Adaptive GUI progress estimation learns aggregate phase timings on the local computer.
-- Single-instance GUI behavior; a repeated launch activates the existing window.
-- Optional file logging modes: `off`, `single`, `all`.
+- Downloads real subtitle tracks exposed by YouTube.
+- Prefers manual subtitles in the selected/original language and falls back to auto-generated subtitles in the same language.
+- Never uses YouTube automatic subtitle translation.
+- Supports TXT without timestamps and standard SRT with timestamps.
+- GUI discovers available subtitle languages automatically.
+- Suggests output filenames from the YouTube video title.
+- Adaptive progress dialogs learn aggregate local timings.
+- Single-instance GUI: repeated launch activates the existing window.
+- CLI sends transcript data to `stdout` and errors to `stderr`.
+- No global Windows `PATH` modification is required.
 
-## Requirements
+## Stable installation
 
-- Windows is the primary supported desktop platform for the GUI workflow.
-- Python 3.10 or newer.
-- Tkinter (included with standard Windows Python installations).
-
-Python dependencies are listed in `requirements.txt` and `pyproject.toml`.
-
-## Installation / update
-
-Clone the repository and switch to the development branch:
+Requirements: Windows, Git, and Python 3.10 or newer.
 
 ```cmd
 git clone https://github.com/Suenee/YouTubeSubs.git
 cd YouTubeSubs
-git switch devel
 upgrade.cmd
 ```
 
-`upgrade.cmd` checks the remote version of itself first, runs a newer remote copy when necessary, refuses to overwrite tracked local changes, updates the current branch, creates `.venv`, updates dependencies, installs the Python package, and validates the root launcher.
+The project creates and maintains its own `.venv` environment. The root launcher `ytsubs.cmd` uses that environment automatically.
 
-No global `PATH` modification is required. The repository contains `ytsubs.cmd`, which launches the executable from `.venv`.
-
-From the repository root:
+Verify the installation:
 
 ```cmd
 ytsubs --version
 ```
 
+Update later with:
+
+```cmd
+upgrade.cmd
+```
+
+`upgrade.cmd` updates itself first when necessary, refuses to overwrite tracked local changes, updates the current branch, maintains the virtual environment and dependencies, validates Python syntax, validates the root launcher, and checks that the running application version matches `pyproject.toml`.
+
 ## GUI
 
-Start without arguments from the repository root:
+Start without parameters:
 
 ```cmd
 ytsubs
 ```
 
-The main window is centered on the desktop. Only one GUI instance is allowed. Starting `ytsubs` again while the GUI is already running activates and brings the existing window to the foreground.
+Paste a YouTube URL or video ID. YouTubeSubs analyzes the video, discovers the subtitle languages actually available, lets you choose TXT or SRT, proposes a filename, and downloads the selected track.
 
-Enter a YouTube URL or video ID. After a short pause, analysis starts in a modal progress dialog. The dialog shows an approximate adaptive progress bar and, after enough local samples are available, an estimated time remaining. **Cancel** stops the workflow and returns to the main window. Closing the modal dialog with its window close button exits the whole application.
-
-After analysis, the language selector contains only subtitle languages actually found for the video. If both manual and auto-generated tracks exist for one language, they are shown as one language choice and the manual track is preferred.
-
-Press **Download** and choose the output path. Downloading, formatting, and saving run in another modal progress dialog with the same Cancel behavior. A cancelled download does not intentionally leave a partial output file.
-
-After a successful save, YouTubeSubs asks whether the file should be opened. **Yes** passes the file to Windows using the current default file association. **No** closes the application without opening the file. The application exits after either choice.
-
-The progress estimate is intentionally approximate. It learns local timing averages for metadata lookup, transcript discovery, download, formatting, and saving. Only aggregate timing data is stored; video URLs, IDs, titles, and transcript contents are not kept.
+Analysis and download use modal progress dialogs with **Cancel**. After a successful save, YouTubeSubs asks whether the file should be opened using the default Windows file association.
 
 ## CLI
 
-Default output is TXT to stdout:
+Default TXT transcript to `stdout`:
 
 ```cmd
 ytsubs VIDEO_ID
-ytsubs "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-Choose a format:
+SRT:
 
 ```cmd
-ytsubs VIDEO_ID --format txt
 ytsubs VIDEO_ID --format srt
 ```
 
-Redirect stdout:
+Redirect output:
 
 ```cmd
 ytsubs VIDEO_ID > transcript.txt
 ytsubs VIDEO_ID --format srt > transcript.srt
-ytsubs VIDEO_ID --format txt | another-command
+```
+
+Pipe the transcript:
+
+```cmd
+ytsubs VIDEO_ID | another-command
+```
+
+Select a language explicitly:
+
+```cmd
+ytsubs VIDEO_ID --lang en
+ytsubs VIDEO_ID --lang cs
 ```
 
 Write directly to a file:
@@ -98,62 +99,35 @@ Write directly to a file:
 ytsubs VIDEO_ID --format srt -o transcript.srt
 ```
 
-Override automatic language selection:
+## Documentation
 
-```cmd
-ytsubs VIDEO_ID --lang en
-ytsubs VIDEO_ID --lang cs
-```
+See [MANUAL.md](MANUAL.md) for the complete user manual, including GUI behavior, CLI examples, language-selection rules, exit codes, configuration, logging, updates, development branches, and known limitations.
 
-`--lang` selects only a subtitle track that YouTube actually exposes. YouTube automatic translation is not called.
+See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Original-language heuristic
 
-YouTube does not expose one universally reliable `original_language` field for every video through `youtube-transcript-api`. YouTubeSubs therefore uses a deterministic heuristic:
+YouTube does not expose one universally reliable original-language field for every video. YouTubeSubs therefore uses a deterministic heuristic:
 
-1. If `yt-dlp` reports a language and that language matches a real subtitle track, use it.
-2. Otherwise prefer the language of the first auto-generated track, because it is normally generated from the spoken audio.
-3. If no generated track exists, use the first manual track returned by YouTube.
-4. Within the selected language, prefer a manual track over an auto-generated track.
+1. Use a language hint reported by `yt-dlp` when it matches a real subtitle track.
+2. Otherwise use the first auto-generated track language, which normally follows the spoken audio.
+3. If there is no generated track, use the first manual track returned by YouTube.
+4. Within the selected language, prefer manual subtitles over auto-generated subtitles.
 
-This is intentionally conservative and never treats an automatically translated subtitle as an original track. Videos with several manually uploaded languages and no useful language metadata can still require `--lang` or a manual GUI selection.
+For unusual videos with several manually uploaded languages and insufficient metadata, use `--lang` or select the language explicitly in the GUI.
 
-## Exit codes
+## Branches
 
-| Code | Meaning |
-| ---: | --- |
-| 0 | Success |
-| 2 | Invalid argument, URL, or video ID |
-| 3 | No usable subtitle track / requested language unavailable |
-| 4 | YouTube, network, or transcript API failure |
-| 5 | Output file write failure |
+- `main` — stable releases.
+- `devel` — active development.
 
-Errors are written to stderr. Transcript content is written to stdout unless `-o/--output` is used.
-
-## Local configuration
-
-Runtime configuration and learned timing statistics are stored in:
-
-```text
-%LOCALAPPDATA%\YouTubeSubs\config.json
-```
-
-The default logging mode is:
-
-```json
-"logging": "off"
-```
-
-Supported values are:
-
-- `off` — no file logging.
-- `single` — overwrite `ytsubs.log` on each application start.
-- `all` — append all runs to `ytsubs.log`.
-
-The log file, when enabled, is stored in the same local application directory.
+Users should normally use `main`.
 
 ## Dependencies
 
-The transcript implementation uses `youtube-transcript-api` as the primary subtitle API. `yt-dlp` is used for video metadata such as the title and language hints.
+- `youtube-transcript-api` — subtitle discovery and retrieval.
+- `yt-dlp` — video metadata such as title and language hints.
 
-Because YouTube changes frequently, dependencies are updated by `upgrade.cmd` within the compatible version ranges defined by the project.
+## License
+
+No license has been specified yet.
