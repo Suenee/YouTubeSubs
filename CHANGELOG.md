@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## 1.16 - 27.08.2026
+
+- Pin the Nuitka build environment to 64-bit Python 3.12 when using MinGW64.
+- Detect Python 3.12 before dependency installation or compilation and fail early with a clear message when it is unavailable.
+- Automatically recreate the local `.venv` with Python 3.12 when an older build environment uses Python 3.13 or another version.
+- Validate the build interpreter and `.venv` Python version before invoking Nuitka.
+- Keep the existing validated `ytsubs.exe` untouched when the required build runtime is unavailable or compilation fails.
+- Preserve the Nuitka onefile build, uncompressed payload, portable smoke test, icon validation, CLI validation, and startup diagnostics.
+
 ## 1.15 - 27.08.2026
 
 - Removed `yt-dlp` from the runtime and build dependency graph after Nuitka spent excessive time analyzing the full extractor tree.
@@ -114,7 +123,7 @@ All notable changes to this project are documented here.
 
 - Added the YouTubeSubs application icon assets for GUI windows, the Windows taskbar, and future executable builds.
 - Improved initial GUI activation so a normal launch is brought to the foreground.
-- Kept single-instance activation behavior and strengthened foreground activation.
+- Kept single-instance GUI behavior with foreground activation.
 - Invalid or unavailable video-like input now fails quietly in the GUI and keeps Download disabled.
 - Removed the `Ready:` status prefix.
 - Added the valid video title as a centered clickable link that opens the canonical YouTube URL in the default browser.
