@@ -105,11 +105,14 @@ if exist "build\publish" rmdir /s /q "build\publish"
 if not exist "build\publish\ytsubs.exe" (echo ERROR: Publish did not create build\publish\ytsubs.exe.& exit /b 25)
 
 echo === CANDIDATE VALIDATION ===
-set "EXPECTED_OUTPUT=ytsubs 2.01"
+set "EXPECTED_OUTPUT=ytsubs 2.02"
 set "CANDIDATE_VERSION="
 for /f "delims=" %%V in ('powershell -NoProfile -Command "$p=New-Object Diagnostics.Process; $p.StartInfo.FileName='%CD%\build\publish\ytsubs.exe'; $p.StartInfo.Arguments='--version'; $p.StartInfo.UseShellExecute=$false; $p.StartInfo.RedirectStandardOutput=$true; $p.StartInfo.RedirectStandardError=$true; $p.StartInfo.CreateNoWindow=$true; [void]$p.Start(); $o=$p.StandardOutput.ReadToEnd().Trim(); $p.WaitForExit(); if($p.ExitCode -eq 0){$o}"') do set "CANDIDATE_VERSION=%%V"
 if not defined CANDIDATE_VERSION (echo ERROR: .NET candidate CLI validation failed. Existing ytsubs.exe was left untouched.& exit /b 26)
 if /i not "!CANDIDATE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Candidate version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !CANDIDATE_VERSION!& exit /b 27)
+
+echo === CMD SYNCHRONIZATION TEST ===
+powershell -NoProfile -Command "$exe='%CD%\build\publish\ytsubs.exe'; $cmd='""'+$exe+'" --version ^& echo __AFTER__"'; $o=& $env:ComSpec /d /s /c $cmd; if($o.Count -ne 2 -or $o[0].Trim() -ne 'ytsubs 2.02' -or $o[1].Trim() -ne '__AFTER__'){Write-Host ('Unexpected cmd output: '+($o -join ' | ')); exit 1}" || (echo ERROR: cmd.exe did not wait for the CLI candidate to finish.& echo        Existing ytsubs.exe was left untouched.& exit /b 32)
 
 echo === INSTALL CANDIDATE ===
 copy /y "build\publish\ytsubs.exe" "%CD%\ytsubs.exe" >nul || (echo ERROR: Unable to install validated ytsubs.exe.& exit /b 28)
@@ -132,6 +135,7 @@ powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [Sy
 
 echo Version validation: !CANDIDATE_VERSION!
 echo Executable validation: ytsubs.exe
+echo CLI synchronization: cmd.exe waits for process completion
 echo Portable validation: standalone EXE passed outside repository
 echo Build system: .NET 10 WinForms, self-contained single-file win-x64
 echo Application icon: embedded assets\ytsubs.ico
