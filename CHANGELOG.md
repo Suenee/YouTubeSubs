@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## 1.11 - 27.08.2026
+
+- Optimized the PyInstaller one-file bundle for faster startup while preserving the single portable `ytsubs.exe` distribution model.
+- Removed broad `collect_all()` calls for `yt_dlp` and `youtube_transcript_api`; rely on normal PyInstaller dependency analysis and package hooks instead of forcibly bundling every package submodule, data file, and binary.
+- Disabled UPX for the executable to avoid an additional runtime decompression stage.
+- Enabled Python bytecode optimization level 1 for the frozen application.
+- Excluded development/test-only standard modules from the bundle where safe.
+- Added executable-size and CLI cold-start timing diagnostics to `upgrade.cmd` so future startup changes can be measured rather than guessed.
+- Preserved the portable smoke test and native windowed/no-console GUI build.
+
 ## 1.10 - 27.08.2026
 
 - Build `ytsubs.exe` as a native Windows windowed executable (`console=False`) so GUI launch never creates or flashes a console window.
