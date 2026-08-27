@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## 1.08 - 27.08.2026
+
+- Replaced the corrupted icon source with a verified 256 × 256 RGBA PNG derived directly from the original YouTubeSubs artwork.
+- Strengthened `upgrade.cmd` icon validation to run Pillow `verify()`, reopen the image, and fully decode it before any ICO generation or PyInstaller work begins.
+- Added the same full-stream verification for the generated Windows ICO.
+- Kept `upgrade.cmd` starting with `cls` and preserved the generated multi-size ICO workflow.
+
 ## 1.07 - 27.08.2026
 
 - Corrected the icon assets: `assets/ytsubs.png` is now the canonical, real PNG source image.
