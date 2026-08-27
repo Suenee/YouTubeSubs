@@ -12,7 +12,7 @@ ytsubs.exe
 
 It is published as a self-contained Windows x64 .NET 10 application. No adjacent runtime, DLL, Python installation, CMD file, or configuration file is required to start it.
 
-The verified Python implementation remains available in branch `ALFA`.
+The verified Python implementation remains available in branch `ALFA` at commit `0b7271a717e3c308c9dd2bbaf2a75fdc0a532cd7`.
 
 ## GUI mode
 
@@ -56,7 +56,7 @@ The first option is `Auto`.
 
 Automatic translation is never requested.
 
-The automatic language rule matches the verified Python behavior:
+The automatic language rule matches the practical verified Python behavior:
 
 1. Prefer the language of the first auto-generated closed-caption track, because it normally represents the spoken language.
 2. If no auto-generated track exists, use the first manual track returned by YouTube.
