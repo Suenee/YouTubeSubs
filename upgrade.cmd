@@ -1,16 +1,9 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-if defined YTSUBS_REPO_DIR (
-  cd /d "%YTSUBS_REPO_DIR%"
-) else (
-  set "YTSUBS_REPO_DIR=%~dp0"
-  cd /d "%~dp0"
-)
-
+if defined YTSUBS_REPO_DIR (cd /d "%YTSUBS_REPO_DIR%") else (set "YTSUBS_REPO_DIR=%~dp0"& cd /d "%~dp0")
 where git >nul 2>nul || (echo ERROR: Git was not found.& exit /b 10)
 where py >nul 2>nul || where python >nul 2>nul || (echo ERROR: Python was not found.& exit /b 11)
-
 for /f "delims=" %%B in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set "BRANCH=%%B"
 if not defined BRANCH (echo ERROR: This directory is not a Git working tree.& exit /b 12)
 
@@ -32,60 +25,32 @@ if exist "%REMOTE_UPGRADE%" (
 del "%REMOTE_UPGRADE%" >nul 2>nul
 
 echo === WORKTREE CHECK ===
-for /f "delims=" %%S in ('git status --porcelain --untracked-files^=no') do (
-  echo ERROR: Tracked local changes detected. Commit, stash, or revert them first.
-  exit /b 14
-)
+for /f "delims=" %%S in ('git status --porcelain --untracked-files^=no') do (echo ERROR: Tracked local changes detected. Commit, stash, or revert them first.& exit /b 14)
 
 echo === UPDATE ===
 git pull --ff-only origin "%BRANCH%" || (echo ERROR: git pull failed.& exit /b 15)
 
 echo === PYTHON ENVIRONMENT ===
-if not exist ".venv\Scripts\python.exe" (
-  py -3 -m venv .venv 2>nul || python -m venv .venv || (echo ERROR: Unable to create .venv.& exit /b 16)
-)
-
+if not exist ".venv\Scripts\python.exe" (py -3 -m venv .venv 2>nul || python -m venv .venv || (echo ERROR: Unable to create .venv.& exit /b 16))
 ".venv\Scripts\python.exe" -m pip install --upgrade pip || exit /b 17
 ".venv\Scripts\python.exe" -m pip install --upgrade -r requirements.txt || exit /b 18
 ".venv\Scripts\python.exe" -m pip install --upgrade -e . || exit /b 19
 
 echo === VALIDATION ===
-".venv\Scripts\python.exe" -m py_compile ytsubs.py || (echo ERROR: Python syntax validation failed.& exit /b 20)
-
-if not exist "assets\ytsubs.ico" (
-  echo ERROR: Missing application icon: assets\ytsubs.ico
-  exit /b 21
-)
-if not exist "assets\ytsubs.png" (
-  echo ERROR: Missing application icon source: assets\ytsubs.png
-  exit /b 22
-)
-
+".venv\Scripts\python.exe" -m py_compile ytsubs.py ytsubs_app.py || (echo ERROR: Python syntax validation failed.& exit /b 20)
+if not exist "assets\ytsubs.ico" (echo ERROR: Missing application icon: assets\ytsubs.ico& exit /b 21)
+if not exist "assets\ytsubs.png" (echo ERROR: Missing application icon source: assets\ytsubs.png& exit /b 22)
 set "EXPECTED_VERSION="
 for /f "tokens=3" %%V in ('findstr /b /c:"version = " pyproject.toml') do set "EXPECTED_VERSION=%%~V"
-if not defined EXPECTED_VERSION (
-  echo ERROR: Unable to read project version from pyproject.toml.
-  exit /b 23
-)
-
+if not defined EXPECTED_VERSION (echo ERROR: Unable to read project version from pyproject.toml.& exit /b 23)
 set "ACTUAL_VERSION="
 for /f "delims=" %%V in ('call "%CD%\ytsubs.cmd" --version 2^>nul') do set "ACTUAL_VERSION=%%V"
-if not defined ACTUAL_VERSION (
-  echo ERROR: Root ytsubs launcher validation failed.
-  exit /b 24
-)
-
+if not defined ACTUAL_VERSION (echo ERROR: Root ytsubs launcher validation failed.& exit /b 24)
 set "EXPECTED_OUTPUT=ytsubs !EXPECTED_VERSION!"
-if /i not "!ACTUAL_VERSION!"=="!EXPECTED_OUTPUT!" (
-  echo ERROR: Version mismatch.
-  echo        Expected: !EXPECTED_OUTPUT!
-  echo        Actual:   !ACTUAL_VERSION!
-  exit /b 25
-)
-
+if /i not "!ACTUAL_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !ACTUAL_VERSION!& exit /b 25)
 echo Version validation: !ACTUAL_VERSION!
 echo Icon validation: assets\ytsubs.ico + assets\ytsubs.png
-
+echo Format validation: .srt .sub .txt .vtt
 echo.
 echo YouTubeSubs update completed successfully on branch %BRANCH%.
 exit /b 0
