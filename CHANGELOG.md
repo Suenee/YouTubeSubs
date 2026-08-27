@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## 1.05 - 27.08.2026
+
+- Converted YouTubeSubs into a standalone Windows application built as a single `ytsubs.exe`.
+- Removed the obsolete `ytsubs.cmd` launcher.
+- Added a PyInstaller one-file/windowed build specification with the application icon embedded into the executable.
+- Added build-only requirements in `requirements-build.txt`.
+- `upgrade.cmd` now builds `ytsubs.exe` automatically in the project root and validates the executable version.
+- Preserved GUI mode on double-click and CLI mode when arguments are supplied.
+- Added Windows stdio binding for the windowed executable so CLI stdout/stderr and shell redirection continue to work.
+- Restored adaptive learned progress estimation in modal dialogs.
+- Preserved `.srt`, `.sub`, `.txt`, and `.vtt` output formats and remembered GUI format selection.
+
 ## 1.04 - 27.08.2026
 
 - Center modal analysis and download dialogs relative to the main application window.
