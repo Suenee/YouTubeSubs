@@ -39,7 +39,6 @@ internal sealed class ProgressDialog : Form
         layout.Controls.Add(_bar, 0, 1);
         layout.Controls.Add(_eta, 0, 2);
         layout.Controls.Add(cancel, 0, 3);
-        layout.SetCellPosition(cancel, new TableLayoutPanelCellPosition(0, 3));
         cancel.Anchor = AnchorStyles.Right;
         Controls.Add(layout);
 
@@ -53,7 +52,7 @@ internal sealed class ProgressDialog : Form
     {
         if (InvokeRequired)
         {
-            BeginInvoke(() => SetPhase(name));
+            BeginInvoke(new Action(() => SetPhase(name)));
             return;
         }
 
@@ -83,7 +82,7 @@ internal sealed class ProgressDialog : Form
     {
         if (InvokeRequired)
         {
-            BeginInvoke(() => Finish(learn));
+            BeginInvoke(new Action(() => Finish(learn)));
             return;
         }
         if (_finishing) return;
