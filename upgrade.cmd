@@ -105,14 +105,38 @@ if exist "build\publish" rmdir /s /q "build\publish"
 if not exist "build\publish\ytsubs.exe" (echo ERROR: Publish did not create build\publish\ytsubs.exe.& exit /b 25)
 
 echo === CANDIDATE VALIDATION ===
-set "EXPECTED_OUTPUT=ytsubs 2.02"
+set "EXPECTED_OUTPUT=ytsubs 2.03"
 set "CANDIDATE_VERSION="
 for /f "delims=" %%V in ('powershell -NoProfile -Command "$p=New-Object Diagnostics.Process; $p.StartInfo.FileName='%CD%\build\publish\ytsubs.exe'; $p.StartInfo.Arguments='--version'; $p.StartInfo.UseShellExecute=$false; $p.StartInfo.RedirectStandardOutput=$true; $p.StartInfo.RedirectStandardError=$true; $p.StartInfo.CreateNoWindow=$true; [void]$p.Start(); $o=$p.StandardOutput.ReadToEnd().Trim(); $p.WaitForExit(); if($p.ExitCode -eq 0){$o}"') do set "CANDIDATE_VERSION=%%V"
 if not defined CANDIDATE_VERSION (echo ERROR: .NET candidate CLI validation failed. Existing ytsubs.exe was left untouched.& exit /b 26)
 if /i not "!CANDIDATE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Candidate version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !CANDIDATE_VERSION!& exit /b 27)
 
 echo === CMD SYNCHRONIZATION TEST ===
-powershell -NoProfile -Command "$exe='%CD%\build\publish\ytsubs.exe'; $cmd='""'+$exe+'" --version & echo __AFTER__"'; $o=& $env:ComSpec /d /s /c $cmd; if($o.Count -ne 2 -or $o[0].Trim() -ne 'ytsubs 2.02' -or $o[1].Trim() -ne '__AFTER__'){Write-Host ('Unexpected cmd output: '+($o -join ' | ')); exit 1}" || (echo ERROR: cmd.exe did not wait for the CLI candidate to finish.& echo        Existing ytsubs.exe was left untouched.& exit /b 32)
+set "SYNC_OUTPUT=%TEMP%\ytsubs_cmd_sync_%RANDOM%_%RANDOM%.txt"
+set "SYNC_EXPECTED=%TEMP%\ytsubs_cmd_sync_expected_%RANDOM%_%RANDOM%.txt"
+>"!SYNC_EXPECTED!" echo ytsubs 2.03
+>>"!SYNC_EXPECTED!" echo __AFTER__
+"%ComSpec%" /d /s /c ""%CD%\build\publish\ytsubs.exe" --version ^& echo __AFTER__" >"!SYNC_OUTPUT!" 2>&1
+set "SYNC_RC=!ERRORLEVEL!"
+if not "!SYNC_RC!"=="0" (
+  echo ERROR: cmd.exe synchronization test could not execute successfully.
+  if exist "!SYNC_OUTPUT!" type "!SYNC_OUTPUT!"
+  del "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
+  echo        Existing ytsubs.exe was left untouched.
+  exit /b 32
+)
+fc /b "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
+if errorlevel 1 (
+  echo ERROR: cmd.exe synchronization output was not in the required order.
+  echo        Expected:
+  type "!SYNC_EXPECTED!"
+  echo        Actual:
+  type "!SYNC_OUTPUT!"
+  del "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
+  echo        Existing ytsubs.exe was left untouched.
+  exit /b 32
+)
+del "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
 
 echo === INSTALL CANDIDATE ===
 copy /y "build\publish\ytsubs.exe" "%CD%\ytsubs.exe" >nul || (echo ERROR: Unable to install validated ytsubs.exe.& exit /b 28)
