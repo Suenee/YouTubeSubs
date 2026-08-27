@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## 2.08 - 28.08.2026
+
+- Fix the dedicated CLI project so .NET SDK output inference cannot silently convert it back to the Windows GUI subsystem.
+- Set `DisableWinExeOutputInference=true` in `YouTubeSubs.Cli.csproj` while keeping `OutputType=Exe`, forcing `ytsubs-cli.exe` to remain a true Windows console-subsystem executable.
+- Keep `ytsubs.exe` as a Windows GUI-subsystem executable and preserve the separate GUI/CLI architecture introduced in 2.06.
+- Improve `upgrade.cmd` PE diagnostics so it prints the detected GUI and CLI subsystem numbers before accepting or rejecting the candidates.
+- Keep installation blocked unless the GUI reports subsystem 2 and the CLI reports subsystem 3.
+- Bump both GUI and CLI assemblies to version 2.08.
+
 ## 2.07 - 28.08.2026
 
 - Harden installation of the separated GUI/CLI executable pair introduced in 2.06.
