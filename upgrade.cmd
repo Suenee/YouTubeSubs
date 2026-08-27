@@ -30,26 +30,34 @@ for /f "delims=" %%S in ('git status --porcelain --untracked-files^=no') do (ech
 echo === UPDATE ===
 git pull --ff-only origin "%BRANCH%" || (echo ERROR: git pull failed.& exit /b 15)
 
-echo === PYTHON ENVIRONMENT ===
+echo === PYTHON BUILD ENVIRONMENT ===
 if not exist ".venv\Scripts\python.exe" (py -3 -m venv .venv 2>nul || python -m venv .venv || (echo ERROR: Unable to create .venv.& exit /b 16))
 ".venv\Scripts\python.exe" -m pip install --upgrade pip || exit /b 17
-".venv\Scripts\python.exe" -m pip install --upgrade -r requirements.txt || exit /b 18
-".venv\Scripts\python.exe" -m pip install --upgrade -e . || exit /b 19
+".venv\Scripts\python.exe" -m pip install --upgrade -r requirements-build.txt || exit /b 18
 
-echo === VALIDATION ===
+echo === SOURCE VALIDATION ===
 ".venv\Scripts\python.exe" -m py_compile ytsubs.py ytsubs_app.py || (echo ERROR: Python syntax validation failed.& exit /b 20)
 if not exist "assets\ytsubs.ico" (echo ERROR: Missing application icon: assets\ytsubs.ico& exit /b 21)
 if not exist "assets\ytsubs.png" (echo ERROR: Missing application icon source: assets\ytsubs.png& exit /b 22)
+if not exist "ytsubs.spec" (echo ERROR: Missing PyInstaller spec: ytsubs.spec& exit /b 23)
+
+echo === STANDALONE BUILD ===
+if exist "ytsubs.exe" del /q "ytsubs.exe" || exit /b 24
+".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --distpath "%CD%" --workpath "%CD%\build\pyinstaller" ytsubs.spec || (echo ERROR: Standalone build failed.& exit /b 25)
+if not exist "ytsubs.exe" (echo ERROR: ytsubs.exe was not created.& exit /b 26)
+
+echo === EXECUTABLE VALIDATION ===
 set "EXPECTED_VERSION="
 for /f "tokens=3" %%V in ('findstr /b /c:"version = " pyproject.toml') do set "EXPECTED_VERSION=%%~V"
-if not defined EXPECTED_VERSION (echo ERROR: Unable to read project version from pyproject.toml.& exit /b 23)
+if not defined EXPECTED_VERSION (echo ERROR: Unable to read project version from pyproject.toml.& exit /b 27)
 set "ACTUAL_VERSION="
-for /f "delims=" %%V in ('call "%CD%\ytsubs.cmd" --version 2^>nul') do set "ACTUAL_VERSION=%%V"
-if not defined ACTUAL_VERSION (echo ERROR: Root ytsubs launcher validation failed.& exit /b 24)
+for /f "delims=" %%V in ('"%CD%\ytsubs.exe" --version 2^>nul') do set "ACTUAL_VERSION=%%V"
+if not defined ACTUAL_VERSION (echo ERROR: Standalone ytsubs.exe CLI validation failed.& exit /b 28)
 set "EXPECTED_OUTPUT=ytsubs !EXPECTED_VERSION!"
-if /i not "!ACTUAL_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !ACTUAL_VERSION!& exit /b 25)
+if /i not "!ACTUAL_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !ACTUAL_VERSION!& exit /b 29)
 echo Version validation: !ACTUAL_VERSION!
-echo Icon validation: assets\ytsubs.ico + assets\ytsubs.png
+echo Executable validation: ytsubs.exe
+echo Icon validation: assets\ytsubs.ico + embedded EXE icon
 echo Format validation: .srt .sub .txt .vtt
 echo.
 echo YouTubeSubs update completed successfully on branch %BRANCH%.
