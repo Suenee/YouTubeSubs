@@ -4,17 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ytsubs"
-version = "1.04"
-description = "Lightweight CLI and GUI tool for downloading original YouTube subtitles as TXT, VTT, SRT, or SUB."
+version = "1.05"
+description = "Standalone CLI and GUI tool for downloading original YouTube subtitles as TXT, VTT, SRT, or SUB."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "youtube-transcript-api>=1.2.4,<2",
   "yt-dlp>=2025.1.1",
 ]
-
-[project.scripts]
-ytsubs = "ytsubs_app:main"
 
 [tool.setuptools]
 py-modules = ["ytsubs", "ytsubs_app"]
