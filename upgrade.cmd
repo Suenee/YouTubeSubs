@@ -60,88 +60,62 @@ if not defined HAS_DOTNET10 (
   if defined DOTNET_EXE echo .NET host was found, but no .NET 10 SDK was detected.
   if not defined DOTNET_EXE echo .NET SDK host was not found.
   echo upgrade.cmd will install the current Microsoft .NET 10 SDK.
-  where winget >nul 2>nul || (echo ERROR: .NET 10 SDK is unavailable and winget is unavailable.& echo        Install the current .NET 10 SDK and run upgrade.cmd again.& exit /b 17)
+  where winget >nul 2>nul || (echo ERROR: .NET 10 SDK is unavailable and winget is unavailable.& exit /b 17)
   winget install --id Microsoft.DotNet.SDK.10 --exact --silent --accept-package-agreements --accept-source-agreements
-  if errorlevel 1 (
-    echo ERROR: Automatic .NET 10 SDK installation failed.
-    echo        If .NET 10 is already installed, run "%ProgramFiles%\dotnet\dotnet.exe" --list-sdks to verify the installation.
-    exit /b 18
-  )
-  set "DOTNET_EXE="
-  for /f "delims=" %%D in ('where dotnet 2^>nul') do if not defined DOTNET_EXE set "DOTNET_EXE=%%D"
-  if not defined DOTNET_EXE if exist "%ProgramFiles%\dotnet\dotnet.exe" set "DOTNET_EXE=%ProgramFiles%\dotnet\dotnet.exe"
-  if not defined DOTNET_EXE (echo ERROR: .NET 10 SDK installation completed but dotnet.exe is still unavailable.& exit /b 19)
-  set "SDK_LIST_FILE=%TEMP%\ytsubs_dotnet_sdks_%RANDOM%.txt"
-  "!DOTNET_EXE!" --list-sdks > "!SDK_LIST_FILE!" 2>nul
-  set "HAS_DOTNET10="
-  findstr /b /c:"10." "!SDK_LIST_FILE!" >nul 2>nul && set "HAS_DOTNET10=1"
-  del "!SDK_LIST_FILE!" >nul 2>nul
-  if not defined HAS_DOTNET10 (echo ERROR: .NET 10 SDK installation completed but SDK 10.x is still unavailable.& exit /b 19)
+  if errorlevel 1 (echo ERROR: Automatic .NET 10 SDK installation failed.& exit /b 18)
+  set "DOTNET_EXE=%ProgramFiles%\dotnet\dotnet.exe"
+  if not exist "!DOTNET_EXE!" (echo ERROR: dotnet.exe is unavailable after installation.& exit /b 19)
 )
-set "DOTNET_VERSION_FILE=%TEMP%\ytsubs_dotnet_version_%RANDOM%.txt"
-"!DOTNET_EXE!" --version > "!DOTNET_VERSION_FILE!" 2>nul
-set "DOTNET_VERSION="
-set /p DOTNET_VERSION=<"!DOTNET_VERSION_FILE!"
-del "!DOTNET_VERSION_FILE!" >nul 2>nul
-if not defined DOTNET_VERSION (echo ERROR: Unable to read the active .NET SDK version.& exit /b 19)
+for /f "delims=" %%V in ('"!DOTNET_EXE!" --version') do set "DOTNET_VERSION=%%V"
 echo Build SDK: .NET !DOTNET_VERSION!
 
-echo === LEGACY PYTHON BUILD CLEANUP ===
-if exist ".venv" rmdir /s /q ".venv"
-if exist "build\nuitka" rmdir /s /q "build\nuitka"
-if exist "nuitka-crash-report.xml" del /q "nuitka-crash-report.xml"
-
 echo === ICON VALIDATION ===
-if not exist "assets\ytsubs.ico.b64" (echo ERROR: Missing encoded Windows icon asset: assets\ytsubs.ico.b64& exit /b 20)
+if not exist "assets\ytsubs.ico.b64" (echo ERROR: Missing encoded Windows icon asset.& exit /b 20)
 powershell -NoProfile -Command "$raw=[Convert]::FromBase64String((Get-Content -Raw 'assets\ytsubs.ico.b64')); if($raw.Length -lt 22 -or $raw[0] -ne 0 -or $raw[1] -ne 0 -or $raw[2] -ne 1 -or $raw[3] -ne 0){exit 1}; [IO.File]::WriteAllBytes('assets\ytsubs.ico',$raw)" || (echo ERROR: Encoded Windows ICO asset is invalid.& exit /b 21)
 
-echo === .NET SOURCE VALIDATION ===
-"!DOTNET_EXE!" restore YouTubeSubs.csproj || (echo ERROR: dotnet restore failed.& exit /b 22)
-"!DOTNET_EXE!" build YouTubeSubs.csproj -c Release --no-restore || (echo ERROR: .NET source build failed.& exit /b 23)
+echo === SOURCE VALIDATION ===
+"!DOTNET_EXE!" restore YouTubeSubs.csproj || (echo ERROR: GUI restore failed.& exit /b 22)
+"!DOTNET_EXE!" restore YouTubeSubs.Cli.csproj || (echo ERROR: CLI restore failed.& exit /b 22)
+"!DOTNET_EXE!" build YouTubeSubs.csproj -c Release --no-restore || (echo ERROR: GUI build failed.& exit /b 23)
+"!DOTNET_EXE!" build YouTubeSubs.Cli.csproj -c Release --no-restore || (echo ERROR: CLI build failed.& exit /b 23)
 
-echo === .NET 10 SELF-CONTAINED SINGLE-FILE PUBLISH ===
-if exist "build\publish" rmdir /s /q "build\publish"
-"!DOTNET_EXE!" publish YouTubeSubs.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:PublishTrimmed=false -o "build\publish" || (echo ERROR: .NET publish failed. Existing ytsubs.exe was left untouched.& exit /b 24)
-if not exist "build\publish\ytsubs.exe" (echo ERROR: Publish did not create build\publish\ytsubs.exe.& exit /b 25)
+echo === PUBLISH GUI AND CLI ===
+if exist "build\publish-gui" rmdir /s /q "build\publish-gui"
+if exist "build\publish-cli" rmdir /s /q "build\publish-cli"
+"!DOTNET_EXE!" publish YouTubeSubs.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:PublishTrimmed=false -o "build\publish-gui" || (echo ERROR: GUI publish failed. Existing executables were left untouched.& exit /b 24)
+"!DOTNET_EXE!" publish YouTubeSubs.Cli.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:PublishTrimmed=false -o "build\publish-cli" || (echo ERROR: CLI publish failed. Existing executables were left untouched.& exit /b 24)
+if not exist "build\publish-gui\ytsubs.exe" (echo ERROR: GUI candidate is missing.& exit /b 25)
+if not exist "build\publish-cli\ytsubs-cli.exe" (echo ERROR: CLI candidate is missing.& exit /b 25)
 
-echo === WINDOWS GUI SUBSYSTEM VALIDATION ===
-powershell -NoProfile -Command "$b=[IO.File]::ReadAllBytes('%CD%\build\publish\ytsubs.exe'); if($b.Length -lt 256){exit 1}; $pe=[BitConverter]::ToInt32($b,0x3c); if($pe -lt 0 -or ($pe+94) -gt $b.Length){exit 1}; $sub=[BitConverter]::ToUInt16($b,$pe+92); if($sub -ne 2){Write-Host ('Unexpected PE subsystem: '+$sub); exit 1}" || (echo ERROR: Candidate is not a Windows GUI-subsystem executable.& echo        A GUI launch could create a console window, so the existing ytsubs.exe was left untouched.& exit /b 33)
+echo === PE SUBSYSTEM VALIDATION ===
+powershell -NoProfile -Command "$g=[IO.File]::ReadAllBytes('%CD%\build\publish-gui\ytsubs.exe'); $c=[IO.File]::ReadAllBytes('%CD%\build\publish-cli\ytsubs-cli.exe'); function sub($b){$pe=[BitConverter]::ToInt32($b,0x3c); [BitConverter]::ToUInt16($b,$pe+92)}; if((sub $g)-ne 2){exit 1}; if((sub $c)-ne 3){exit 2}" || (echo ERROR: GUI/CLI PE subsystems are not separated correctly.& echo        Existing executables were left untouched.& exit /b 33)
 
-echo === CANDIDATE VALIDATION ===
-set "EXPECTED_OUTPUT=ytsubs 2.05"
-set "CANDIDATE_VERSION="
-for /f "delims=" %%V in ('powershell -NoProfile -Command "$p=New-Object Diagnostics.Process; $p.StartInfo.FileName='%CD%\build\publish\ytsubs.exe'; $p.StartInfo.Arguments='--version'; $p.StartInfo.UseShellExecute=$false; $p.StartInfo.RedirectStandardOutput=$true; $p.StartInfo.RedirectStandardError=$true; $p.StartInfo.CreateNoWindow=$true; [void]$p.Start(); $o=$p.StandardOutput.ReadToEnd().Trim(); $e=$p.StandardError.ReadToEnd().Trim(); $p.WaitForExit(); if($p.ExitCode -eq 0){$o}else{if($e){Write-Host $e}; exit $p.ExitCode}"') do set "CANDIDATE_VERSION=%%V"
-if not defined CANDIDATE_VERSION (echo ERROR: .NET candidate CLI validation failed. Existing ytsubs.exe was left untouched.& exit /b 26)
-if /i not "!CANDIDATE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Candidate version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !CANDIDATE_VERSION!& exit /b 27)
+echo === CLI VALIDATION ===
+set "EXPECTED_OUTPUT=ytsubs-cli 2.06"
+set "CLI_VERSION="
+for /f "delims=" %%V in ('"%CD%\build\publish-cli\ytsubs-cli.exe" --version') do set "CLI_VERSION=%%V"
+if /i not "!CLI_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: CLI candidate version mismatch.& echo Expected: !EXPECTED_OUTPUT!& echo Actual: !CLI_VERSION!& exit /b 27)
 
-echo === INSTALL CANDIDATE ===
-copy /y "build\publish\ytsubs.exe" "%CD%\ytsubs.exe" >nul || (echo ERROR: Unable to install validated ytsubs.exe.& exit /b 28)
+echo === INSTALL CANDIDATES ===
+copy /y "build\publish-gui\ytsubs.exe" "%CD%\ytsubs.exe" >nul || (echo ERROR: Unable to install ytsubs.exe.& exit /b 28)
+copy /y "build\publish-cli\ytsubs-cli.exe" "%CD%\ytsubs-cli.exe" >nul || (echo ERROR: Unable to install ytsubs-cli.exe.& exit /b 28)
 
-echo === PORTABLE SMOKE TEST ===
+echo === PORTABLE PAIR TEST ===
 set "PORTABLE_DIR=%TEMP%\ytsubs_portable_%RANDOM%_%RANDOM%"
-mkdir "!PORTABLE_DIR!" >nul 2>nul || (echo ERROR: Unable to create portable test directory.& exit /b 29)
-copy /y "%CD%\ytsubs.exe" "!PORTABLE_DIR!\ytsubs.exe" >nul || (rmdir /s /q "!PORTABLE_DIR!" >nul 2>nul& echo ERROR: Unable to copy ytsubs.exe for portable test.& exit /b 30)
+mkdir "!PORTABLE_DIR!" >nul 2>nul || exit /b 29
+copy /y "%CD%\ytsubs.exe" "!PORTABLE_DIR!\ytsubs.exe" >nul
+copy /y "%CD%\ytsubs-cli.exe" "!PORTABLE_DIR!\ytsubs-cli.exe" >nul
 set "PORTABLE_VERSION="
-for /f "delims=" %%V in ('powershell -NoProfile -Command "$p=New-Object Diagnostics.Process; $p.StartInfo.FileName='!PORTABLE_DIR!\ytsubs.exe'; $p.StartInfo.Arguments='--version'; $p.StartInfo.WorkingDirectory='!PORTABLE_DIR!'; $p.StartInfo.UseShellExecute=$false; $p.StartInfo.RedirectStandardOutput=$true; $p.StartInfo.CreateNoWindow=$true; [void]$p.Start(); $o=$p.StandardOutput.ReadToEnd().Trim(); $p.WaitForExit(); if($p.ExitCode -eq 0){$o}"') do set "PORTABLE_VERSION=%%V"
+for /f "delims=" %%V in ('"!PORTABLE_DIR!\ytsubs-cli.exe" --version') do set "PORTABLE_VERSION=%%V"
 rmdir /s /q "!PORTABLE_DIR!" >nul 2>nul
-if /i not "!PORTABLE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Portable executable validation failed.& exit /b 31)
+if /i not "!PORTABLE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Portable CLI validation failed.& exit /b 31)
 
-echo === STARTUP DIAGNOSTICS ===
-set "EXE_BYTES="
-for %%F in ("%CD%\ytsubs.exe") do set "EXE_BYTES=%%~zF"
-set "STARTUP_MS="
-for /f "delims=" %%T in ('powershell -NoProfile -Command "$sw=[Diagnostics.Stopwatch]::StartNew(); $p=New-Object Diagnostics.Process; $p.StartInfo.FileName='%CD%\ytsubs.exe'; $p.StartInfo.Arguments='--version'; $p.StartInfo.UseShellExecute=$false; $p.StartInfo.RedirectStandardOutput=$true; $p.StartInfo.CreateNoWindow=$true; [void]$p.Start(); $null=$p.StandardOutput.ReadToEnd(); $p.WaitForExit(); $sw.Stop(); [int]$sw.Elapsed.TotalMilliseconds"') do set "STARTUP_MS=%%T"
-powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Application]::DoEvents()" >nul 2>nul
-
-echo Version validation: !CANDIDATE_VERSION!
-echo Executable validation: ytsubs.exe
-echo GUI subsystem: Windows GUI - no console allocated on normal GUI launch
-echo CLI validation: redirected stdout and process completion passed
-echo Portable validation: standalone EXE passed outside repository
-echo Build system: .NET 10 WinForms, self-contained single-file win-x64
-echo Application icon: embedded assets\ytsubs.ico
-echo Executable size: !EXE_BYTES! bytes
-if defined STARTUP_MS echo CLI cold-start sample: !STARTUP_MS! ms
+echo Version validation: !CLI_VERSION!
+echo GUI executable: ytsubs.exe - Windows GUI subsystem
+echo CLI executable: ytsubs-cli.exe - Windows console subsystem
+echo CLI without arguments: launches ytsubs.exe
+echo Portable validation: GUI/CLI pair passed outside repository
+echo Build system: .NET 10 self-contained single-file win-x64
 echo Format validation: .srt .sub .txt .vtt
 echo.
 echo YouTubeSubs update completed successfully on branch %BRANCH%.
