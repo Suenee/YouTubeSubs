@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here.
 
+## 1.14 - 27.08.2026
+
+- Replaced the PyInstaller production build with Nuitka onefile compilation for faster application startup while preserving a single portable `ytsubs.exe`.
+- Build with an uncompressed onefile payload to prioritize startup latency over executable size.
+- Use Nuitka Windows console mode `attach`: GUI launch does not create a console, while CLI launch can attach to an existing terminal.
+- Enable Nuitka's `tk-inter` plugin and embed the validated application ICO into the executable and onefile payload.
+- Keep the existing `yt-dlp` lazy import optimization.
+- `upgrade.cmd` builds into a staging directory and validates the Nuitka candidate before replacing the existing working `ytsubs.exe`.
+- Preserve the portable smoke test outside the repository and startup diagnostics.
+- Remove the obsolete PyInstaller build specification and PyInstaller build dependency.
+
+## 1.13 - 27.08.2026
+
+- Center the native Windows Save As dialog on the work area of the monitor containing the main YouTubeSubs window instead of centering it relative to the small application window.
+- Keep the save dialog on the active monitor and reduce the risk of it extending outside the visible desktop.
+
 ## 1.12 - 27.08.2026
 
 - Lazy-load `yt-dlp` only when video metadata is actually requested instead of importing its large module tree during normal application startup.
