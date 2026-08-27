@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## 2.03 - 28.08.2026
+
+- Fix the `upgrade.cmd` CLI synchronization validation introduced in 2.02.
+- Remove the fragile nested PowerShell/cmd.exe quoting that could produce a parser error while still allowing the upgrade to continue.
+- Run the synchronization check directly through `cmd.exe`, capture its complete output, and compare it byte-for-byte with the expected command order.
+- Treat any execution error or output mismatch as a hard validation failure and leave the previously installed `ytsubs.exe` untouched.
+- Keep the verified 2.02 console-subsystem CLI behavior unchanged.
+
 ## 2.02 - 28.08.2026
 
 - Fix CLI execution under `cmd.exe` so the shell waits for `ytsubs.exe` to finish before displaying the next prompt.
