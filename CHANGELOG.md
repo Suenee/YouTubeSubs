@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## 1.04 - 27.08.2026
+
+- Center modal analysis and download dialogs relative to the main application window.
+- Show `Invalid Video ID. Please try again...` in red for invalid or unavailable video input while keeping Download disabled.
+- Shorten the automatic language choice label to `Auto`.
+- Replace TXT/SRT radio buttons with a compact format selector on the same row as Language.
+- Add `.srt`, `.sub`, `.txt`, and `.vtt` output choices in alphabetical order.
+- Remember the last GUI output format in local configuration; default to `.srt` when no previous choice exists.
+- Add WebVTT output and SubViewer-compatible SUB output without additional dependencies.
+- Keep the Language selector stretched across the remaining row width while the format selector stays compact.
+
 ## 1.03 - 27.08.2026
 
 - Added the YouTubeSubs application icon assets for GUI windows, the Windows taskbar, and future executable builds.
