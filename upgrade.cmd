@@ -84,12 +84,21 @@ rmdir /s /q "!PORTABLE_DIR!" >nul 2>nul
 if not defined PORTABLE_VERSION (echo ERROR: Portable ytsubs.exe failed outside the repository.& exit /b 33)
 if /i not "!PORTABLE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Portable executable version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !PORTABLE_VERSION!& exit /b 34)
 
+echo === STARTUP DIAGNOSTICS ===
+set "EXE_BYTES="
+for %%F in ("%CD%\ytsubs.exe") do set "EXE_BYTES=%%~zF"
+set "STARTUP_MS="
+for /f "delims=" %%T in ('powershell -NoProfile -Command "$sw=[Diagnostics.Stopwatch]::StartNew(); ^& '%CD%\ytsubs.exe' --version ^| Out-Null; $sw.Stop(); [int]$sw.Elapsed.TotalMilliseconds"') do set "STARTUP_MS=%%T"
+
 ".venv\Scripts\python.exe" -c "import ctypes; ctypes.windll.shell32.SHChangeNotify(0x08000000,0,None,None)" >nul 2>nul
 
 echo Version validation: !ACTUAL_VERSION!
 echo Executable validation: ytsubs.exe
 echo Portable validation: standalone EXE passed outside repository
 echo GUI mode: native windowed EXE, no console window
+echo Bundle optimization: minimal PyInstaller analysis, optimize=1, UPX disabled
+echo Executable size: !EXE_BYTES! bytes
+if defined STARTUP_MS echo CLI cold-start sample: !STARTUP_MS! ms
 echo Icon validation: encoded ICO -^> structural validation -^> embedded EXE icon
 echo Format validation: .srt .sub .txt .vtt
 echo.
