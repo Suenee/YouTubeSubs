@@ -2,7 +2,7 @@
 
 YouTubeSubs is a standalone Windows GUI and CLI utility for downloading manual or auto-generated YouTube subtitles without automatic translation.
 
-The current `devel` branch is the .NET 10 implementation. The last verified Python implementation is preserved separately in branch `ALFA` as version 1.13.
+The current `devel` branch is the .NET 10 implementation. The last verified Python implementation is preserved separately in branch `ALFA` as version 1.13 at commit `0b7271a717e3c308c9dd2bbaf2a75fdc0a532cd7`.
 
 ## Design goal
 
