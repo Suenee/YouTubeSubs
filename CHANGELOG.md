@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## 1.12 - 27.08.2026
+
+- Lazy-load `yt-dlp` only when video metadata is actually requested instead of importing its large module tree during normal application startup.
+- Keep GUI startup and lightweight CLI operations such as `--version` free from the runtime cost of importing `yt-dlp`.
+- Preserve `yt-dlp` as the metadata/fallback implementation and keep the existing subtitle behavior unchanged.
+- Keep the single portable `ytsubs.exe`, native windowed GUI, embedded dependencies, and portable smoke test.
+
 ## 1.11 - 27.08.2026
 
 - Optimized the PyInstaller one-file bundle for faster startup while preserving the single portable `ytsubs.exe` distribution model.
