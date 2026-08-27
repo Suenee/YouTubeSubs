@@ -88,10 +88,10 @@ if not exist "build\publish-gui\ytsubs.exe" (echo ERROR: GUI candidate is missin
 if not exist "build\publish-cli\ytsubs-cli.exe" (echo ERROR: CLI candidate is missing.& exit /b 25)
 
 echo === PE SUBSYSTEM VALIDATION ===
-powershell -NoProfile -Command "$g=[IO.File]::ReadAllBytes('%CD%\build\publish-gui\ytsubs.exe'); $c=[IO.File]::ReadAllBytes('%CD%\build\publish-cli\ytsubs-cli.exe'); function sub($b){$pe=[BitConverter]::ToInt32($b,0x3c); [BitConverter]::ToUInt16($b,$pe+92)}; if((sub $g)-ne 2){exit 1}; if((sub $c)-ne 3){exit 2}" || (echo ERROR: GUI/CLI PE subsystems are not separated correctly.& echo        Existing executables were left untouched.& exit /b 33)
+powershell -NoProfile -Command "$g=[IO.File]::ReadAllBytes('%CD%\build\publish-gui\ytsubs.exe'); $c=[IO.File]::ReadAllBytes('%CD%\build\publish-cli\ytsubs-cli.exe'); function sub($b){$pe=[BitConverter]::ToInt32($b,0x3c); [BitConverter]::ToUInt16($b,$pe+92)}; $gs=sub $g; $cs=sub $c; Write-Host ('GUI subsystem: '+$gs); Write-Host ('CLI subsystem: '+$cs); if($gs-ne 2){exit 1}; if($cs-ne 3){exit 2}" || (echo ERROR: GUI/CLI PE subsystems are not separated correctly.& echo        Existing executables were left untouched.& exit /b 33)
 
 echo === CLI VALIDATION ===
-set "EXPECTED_OUTPUT=ytsubs-cli 2.07"
+set "EXPECTED_OUTPUT=ytsubs-cli 2.08"
 set "CLI_VERSION="
 for /f "delims=" %%V in ('"%CD%\build\publish-cli\ytsubs-cli.exe" --version') do set "CLI_VERSION=%%V"
 if /i not "!CLI_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: CLI candidate version mismatch.& echo Expected: !EXPECTED_OUTPUT!& echo Actual: !CLI_VERSION!& exit /b 27)
