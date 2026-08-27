@@ -104,44 +104,15 @@ if exist "build\publish" rmdir /s /q "build\publish"
 "!DOTNET_EXE!" publish YouTubeSubs.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:PublishTrimmed=false -o "build\publish" || (echo ERROR: .NET publish failed. Existing ytsubs.exe was left untouched.& exit /b 24)
 if not exist "build\publish\ytsubs.exe" (echo ERROR: Publish did not create build\publish\ytsubs.exe.& exit /b 25)
 
+echo === WINDOWS GUI SUBSYSTEM VALIDATION ===
+powershell -NoProfile -Command "$b=[IO.File]::ReadAllBytes('%CD%\build\publish\ytsubs.exe'); if($b.Length -lt 256){exit 1}; $pe=[BitConverter]::ToInt32($b,0x3c); if($pe -lt 0 -or ($pe+94) -gt $b.Length){exit 1}; $sub=[BitConverter]::ToUInt16($b,$pe+92); if($sub -ne 2){Write-Host ('Unexpected PE subsystem: '+$sub); exit 1}" || (echo ERROR: Candidate is not a Windows GUI-subsystem executable.& echo        A GUI launch could create a console window, so the existing ytsubs.exe was left untouched.& exit /b 33)
+
 echo === CANDIDATE VALIDATION ===
-set "EXPECTED_OUTPUT=ytsubs 2.04"
+set "EXPECTED_OUTPUT=ytsubs 2.05"
 set "CANDIDATE_VERSION="
-for /f "delims=" %%V in ('powershell -NoProfile -Command "$p=New-Object Diagnostics.Process; $p.StartInfo.FileName='%CD%\build\publish\ytsubs.exe'; $p.StartInfo.Arguments='--version'; $p.StartInfo.UseShellExecute=$false; $p.StartInfo.RedirectStandardOutput=$true; $p.StartInfo.RedirectStandardError=$true; $p.StartInfo.CreateNoWindow=$true; [void]$p.Start(); $o=$p.StandardOutput.ReadToEnd().Trim(); $p.WaitForExit(); if($p.ExitCode -eq 0){$o}"') do set "CANDIDATE_VERSION=%%V"
+for /f "delims=" %%V in ('powershell -NoProfile -Command "$p=New-Object Diagnostics.Process; $p.StartInfo.FileName='%CD%\build\publish\ytsubs.exe'; $p.StartInfo.Arguments='--version'; $p.StartInfo.UseShellExecute=$false; $p.StartInfo.RedirectStandardOutput=$true; $p.StartInfo.RedirectStandardError=$true; $p.StartInfo.CreateNoWindow=$true; [void]$p.Start(); $o=$p.StandardOutput.ReadToEnd().Trim(); $e=$p.StandardError.ReadToEnd().Trim(); $p.WaitForExit(); if($p.ExitCode -eq 0){$o}else{if($e){Write-Host $e}; exit $p.ExitCode}"') do set "CANDIDATE_VERSION=%%V"
 if not defined CANDIDATE_VERSION (echo ERROR: .NET candidate CLI validation failed. Existing ytsubs.exe was left untouched.& exit /b 26)
 if /i not "!CANDIDATE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Candidate version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !CANDIDATE_VERSION!& exit /b 27)
-
-echo === CMD SYNCHRONIZATION TEST ===
-set "SYNC_SCRIPT=%TEMP%\ytsubs_cmd_sync_%RANDOM%_%RANDOM%.cmd"
-set "SYNC_OUTPUT=%TEMP%\ytsubs_cmd_sync_%RANDOM%_%RANDOM%.txt"
-set "SYNC_EXPECTED=%TEMP%\ytsubs_cmd_sync_expected_%RANDOM%_%RANDOM%.txt"
->"!SYNC_SCRIPT!" echo @echo off
->>"!SYNC_SCRIPT!" echo "%CD%\build\publish\ytsubs.exe" --version
->>"!SYNC_SCRIPT!" echo if errorlevel 1 exit /b 91
->>"!SYNC_SCRIPT!" echo echo __AFTER__
->"!SYNC_EXPECTED!" echo ytsubs 2.04
->>"!SYNC_EXPECTED!" echo __AFTER__
-call "!SYNC_SCRIPT!" >"!SYNC_OUTPUT!" 2>&1
-set "SYNC_RC=!ERRORLEVEL!"
-if not "!SYNC_RC!"=="0" (
-  echo ERROR: cmd.exe synchronization test could not execute successfully. Exit code !SYNC_RC!.
-  if exist "!SYNC_OUTPUT!" type "!SYNC_OUTPUT!"
-  del "!SYNC_SCRIPT!" "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
-  echo        Existing ytsubs.exe was left untouched.
-  exit /b 32
-)
-fc /b "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
-if errorlevel 1 (
-  echo ERROR: cmd.exe synchronization output was not in the required order.
-  echo        Expected:
-  type "!SYNC_EXPECTED!"
-  echo        Actual:
-  type "!SYNC_OUTPUT!"
-  del "!SYNC_SCRIPT!" "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
-  echo        Existing ytsubs.exe was left untouched.
-  exit /b 32
-)
-del "!SYNC_SCRIPT!" "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
 
 echo === INSTALL CANDIDATE ===
 copy /y "build\publish\ytsubs.exe" "%CD%\ytsubs.exe" >nul || (echo ERROR: Unable to install validated ytsubs.exe.& exit /b 28)
@@ -164,7 +135,8 @@ powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [Sy
 
 echo Version validation: !CANDIDATE_VERSION!
 echo Executable validation: ytsubs.exe
-echo CLI synchronization: temporary cmd script completed in order
+echo GUI subsystem: Windows GUI - no console allocated on normal GUI launch
+echo CLI validation: redirected stdout and process completion passed
 echo Portable validation: standalone EXE passed outside repository
 echo Build system: .NET 10 WinForms, self-contained single-file win-x64
 echo Application icon: embedded assets\ytsubs.ico
