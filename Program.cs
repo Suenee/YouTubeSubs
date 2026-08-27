@@ -56,7 +56,7 @@ internal static class Program
                 {
                     var result = await socket.ReceiveAsync(cancellation.Token);
                     if (Encoding.ASCII.GetString(result.Buffer) == "ACTIVATE" && !form.IsDisposed)
-                        form.BeginInvoke(form.ActivateFront);
+                        form.BeginInvoke(new Action(form.ActivateFront));
                 }
                 catch (OperationCanceledException) { break; }
                 catch (ObjectDisposedException) { break; }
