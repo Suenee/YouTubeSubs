@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace YouTubeSubs;
 
@@ -27,7 +28,7 @@ internal sealed class MainForm : Form
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
         Padding = new Padding(14);
-        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application;
 
         _language.Items.Add("Auto");
         _language.SelectedIndex = 0;
@@ -81,7 +82,7 @@ internal sealed class MainForm : Form
         TopMost = true;
         BringToFront();
         Activate();
-        BeginInvoke(async () => { await Task.Delay(200); if (!IsDisposed) TopMost = false; });
+        BeginInvoke(new Action(async () => { await Task.Delay(200); if (!IsDisposed) TopMost = false; }));
     }
 
     private void ScheduleAnalysis()
