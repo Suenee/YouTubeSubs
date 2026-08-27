@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## 2.01 - 28.08.2026
+
+- Fix `.NET 10 SDK` detection in `upgrade.cmd` on Windows.
+- Avoid nested `FOR /F` command parsing around a quoted `dotnet.exe` path, which could corrupt the command and falsely report that .NET 10 was missing.
+- Resolve the active `dotnet.exe` path explicitly, capture `--list-sdks` output to a temporary file, and detect SDK 10.x from that file.
+- Only invoke the `winget` installer when no usable .NET 10 SDK is actually detected.
+- Preserve the self-updating `upgrade.cmd` workflow and existing executable on later build failures.
+
 ## 2.00 - 28.08.2026
 
 - Preserve the last verified Python implementation, version 1.13, in branch `ALFA` before replacing the development implementation.
