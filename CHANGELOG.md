@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## 1.10 - 27.08.2026
+
+- Build `ytsubs.exe` as a native Windows windowed executable (`console=False`) so GUI launch never creates or flashes a console window.
+- Keep CLI support through the existing explicit parent-console stdio binding when arguments are supplied.
+- Added a portable smoke test to `upgrade.cmd`: the finished `ytsubs.exe` is copied to a new empty temporary directory outside the repository and `--version` is validated there.
+- The portable smoke test ensures the distributed executable does not depend on repository Python sources, CMD/PowerShell launchers, `.venv`, or adjacent project files.
+- Keep the final distribution artifact as a single `ytsubs.exe` with the application icon and Python runtime dependencies embedded.
+
 ## 1.09 - 27.08.2026
 
 - Removed the PNG-to-ICO conversion workflow from `upgrade.cmd`.
