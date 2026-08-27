@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## 1.15 - 27.08.2026
+
+- Removed `yt-dlp` from the runtime and build dependency graph after Nuitka spent excessive time analyzing the full extractor tree.
+- Replace `yt-dlp` metadata lookup with YouTube's lightweight oEmbed endpoint via `requests`.
+- Preserve subtitle retrieval through `youtube-transcript-api`; automatic translation remains disabled.
+- Simplify automatic original-language detection: prefer the first auto-generated transcript language, otherwise use the first manual track returned by YouTube.
+- Keep manual subtitles preferred over auto-generated subtitles within the selected language.
+- `upgrade.cmd` now explicitly uninstalls stale `yt-dlp` from the local build environment and fails validation if runtime source imports it again.
+- Keep Nuitka onefile, uncompressed payload, console attach mode, candidate validation, portable smoke test, icon validation, and startup diagnostics.
+
 ## 1.14 - 27.08.2026
 
 - Replaced the PyInstaller production build with Nuitka onefile compilation for faster application startup while preserving a single portable `ytsubs.exe`.
