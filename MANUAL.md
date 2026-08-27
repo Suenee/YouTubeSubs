@@ -1,309 +1,195 @@
-# YouTubeSubs User Manual
+# YouTubeSubs Manual
 
-YouTubeSubs is a small Windows-focused Python application for downloading subtitle tracks that YouTube actually exposes for a video. It can be used either through a simple graphical interface or as a command-line tool suitable for scripts, pipes, and redirection.
+YouTubeSubs 2.00 is the .NET 10 port of the last verified Python version 1.13. The port intentionally preserves the existing workflow and behavior instead of redesigning the application.
 
-Automatic subtitle translation is intentionally not used. When both manual and auto-generated subtitles are available in the selected language, YouTubeSubs prefers the manual track.
+## Distribution
 
-## 1. Requirements
-
-- Windows 10 or Windows 11
-- Python 3.10 or newer
-- Git
-- Internet access
-
-Tkinter is included with the standard Python installation for Windows.
-
-## 2. Installation
-
-Clone the stable branch:
-
-```cmd
-git clone https://github.com/Suenee/YouTubeSubs.git
-cd YouTubeSubs
-upgrade.cmd
-```
-
-The project uses its own `.venv` directory. It does not modify the global Windows `PATH`.
-
-The command is launched from the repository root through:
+The distributed application is a single file:
 
 ```text
-ytsubs.cmd
+ytsubs.exe
 ```
 
-This launcher automatically uses the executable installed inside `.venv`.
+It is published as a self-contained Windows x64 .NET 10 application. No adjacent runtime, DLL, Python installation, CMD file, or configuration file is required to start it.
 
-To verify the installation:
+The verified Python implementation remains available in branch `ALFA`.
 
-```cmd
-ytsubs --version
-```
+## GUI mode
 
-## 3. Updating
+Start `ytsubs.exe` without arguments.
 
-From the repository root run:
+The main window contains:
 
-```cmd
-upgrade.cmd
-```
+- YouTube URL / Video ID input
+- Language selector
+- compact output-format selector
+- centered video-title/status area
+- Download and Cancel buttons
 
-`upgrade.cmd` performs the complete local update workflow:
+The main window starts centered on the desktop. Only one GUI instance is allowed. Starting another instance activates the already running one.
 
-1. Detects the currently checked-out Git branch.
-2. Checks whether a newer `upgrade.cmd` exists remotely and runs the newer copy first when needed.
-3. Refuses to overwrite tracked local changes.
-4. Updates the current branch using fast-forward only.
-5. Creates `.venv` if it does not exist.
-6. Updates Python dependencies.
-7. Installs the local YouTubeSubs package into `.venv`.
-8. Validates Python syntax.
-9. Runs the root `ytsubs` launcher.
-10. Verifies that the version returned by `ytsubs --version` exactly matches the project version in `pyproject.toml`.
+### Video input
 
-Any failed step returns a non-zero exit code and prints a clear error message.
+Accepted input includes:
 
-## 4. GUI mode
+- a plain 11-character YouTube video ID
+- a normal YouTube watch URL
+- `youtu.be` URLs
+- Shorts, Embed, and Live URLs
+- damaged or surrounding text when exactly one unambiguous 11-character YouTube ID can be recovered
 
-Start YouTubeSubs from the repository root without parameters:
+Analysis starts automatically 500 ms after input stops changing.
 
-```cmd
-ytsubs
-```
-
-The main window opens centered on the desktop.
-
-Only one GUI instance is allowed. If YouTubeSubs is already running and `ytsubs` is started again, the second process exits and the existing application is brought to the foreground.
-
-### 4.1 Entering a video
-
-Paste either a complete YouTube URL or an 11-character video ID.
-
-Examples:
+If the input is invalid or the video cannot be used, the GUI displays:
 
 ```text
-https://www.youtube.com/watch?v=dQw4w9WgXcQ
+Invalid Video ID. Please try again...
 ```
 
+and Download remains disabled.
+
+For a valid video, the title is shown as a blue underlined clickable link to the canonical YouTube watch URL.
+
+## Subtitle language selection
+
+The first option is `Auto`.
+
+Automatic translation is never requested.
+
+The automatic language rule matches the verified Python behavior:
+
+1. Prefer the language of the first auto-generated closed-caption track, because it normally represents the spoken language.
+2. If no auto-generated track exists, use the first manual track returned by YouTube.
+3. Within the selected language, prefer a manual track over an auto-generated track.
+
+The language list shows the real closed-caption tracks supplied by YouTube, including whether a language is available as manual subtitles, auto-generated subtitles, or both.
+
+## Output formats
+
+The GUI selector contains, in order:
+
 ```text
-dQw4w9WgXcQ
+.srt
+.sub
+.txt
+.vtt
 ```
 
-Supported URL forms include normal watch URLs, `youtu.be`, Shorts, embed URLs, and live URLs.
+The last selected GUI format is stored locally. With no saved setting, `.srt` is selected.
 
-### 4.2 Video analysis
+`.sub` uses the SubViewer time format and does not depend on FPS.
 
-After a short input pause, YouTubeSubs automatically analyzes the video.
+## Save dialog
 
-Analysis runs in a modal progress dialog. The main window cannot be changed while analysis is active.
+The native Windows Save As dialog proposes a filename based on the video title and selected extension.
 
-The dialog shows the current phase and an approximate progress bar. After several successful operations, the program also estimates the remaining time using timing data learned locally on that computer.
+Its owner is positioned across the working area of the monitor containing the main application, so Windows centers the native dialog on that monitor instead of offsetting it relative to the small YouTubeSubs window.
 
-Press **Cancel** to stop the analysis and return to the main window.
+## Progress and cancellation
 
-Closing the progress window using the Windows close button exits YouTubeSubs completely.
+Analysis and download use modal progress dialogs centered relative to the main window.
 
-### 4.3 Language selection
+The progress model learns average durations for these phases:
 
-After analysis, the language list contains only subtitle languages actually exposed by YouTube for that video.
+- metadata
+- transcripts
+- download
+- format
+- save
 
-Typical examples are:
+After several successful operations it displays an estimated remaining time. Learned values are stored in local configuration.
 
-```text
-Auto / Original
-English (en) — manual + auto
-Czech (cs) — manual
-German (de) — auto
-```
+Pressing Cancel cancels the current workflow and returns to the application. Closing a progress dialog with its window X requests cancellation and exits the application.
 
-`Auto / Original` uses the application's deterministic original-language heuristic.
+## Successful save
 
-If both manual and auto-generated tracks exist for the same language, the manual track is used.
-
-YouTube automatic translation is never requested.
-
-### 4.4 TXT and SRT
-
-Choose one output format:
-
-- **TXT** — transcript text without timestamps.
-- **SRT** — standard SubRip subtitles with timestamps.
-
-### 4.5 Downloading
-
-Press **Download** and select the destination file.
-
-YouTubeSubs proposes a filename based on the YouTube video title and automatically uses the selected `.txt` or `.srt` extension.
-
-Download, formatting, and saving run in a second modal progress dialog.
-
-Press **Cancel** to stop the operation and return to the main window. A cancelled operation is not intended to leave a partial output file.
-
-### 4.6 Opening the saved file
-
-After a successful save, YouTubeSubs asks:
+After a successful save YouTubeSubs asks:
 
 ```text
+Subtitles saved successfully.
+
 Open the file?
 ```
 
-- **Yes** — the file is passed to Windows and opened using the current default application associated with `.txt` or `.srt`.
-- **No** — the application exits without opening the file.
+Yes opens the file with its Windows file association and exits. No exits without opening it.
 
-YouTubeSubs exits after either choice.
+## CLI mode
 
-## 5. CLI mode
+Supplying arguments runs CLI mode.
 
-Providing a video argument switches the application directly into CLI mode. No GUI is opened.
-
-### 5.1 Basic TXT output
+Examples:
 
 ```cmd
-ytsubs VIDEO_ID
+ytsubs.exe VIDEO_ID
+ytsubs.exe "https://www.youtube.com/watch?v=VIDEO_ID"
+ytsubs.exe VIDEO_ID --format srt
+ytsubs.exe VIDEO_ID --format sub
+ytsubs.exe VIDEO_ID --format txt
+ytsubs.exe VIDEO_ID --format vtt
+ytsubs.exe VIDEO_ID --lang cs
+ytsubs.exe VIDEO_ID --format srt -o subtitles.srt
+ytsubs.exe --version
 ```
 
-or:
+Default CLI output format is TXT. Without `-o` / `--output`, subtitle text is written to stdout. Errors are written to stderr so normal pipes and redirection remain usable.
 
-```cmd
-ytsubs "https://www.youtube.com/watch?v=VIDEO_ID"
-```
-
-The transcript is written to `stdout`.
-
-### 5.2 Redirecting output to a file
-
-```cmd
-ytsubs VIDEO_ID > transcript.txt
-```
-
-For SRT:
-
-```cmd
-ytsubs VIDEO_ID --format srt > transcript.srt
-```
-
-### 5.3 Pipes
-
-Because transcript data is written to `stdout` and errors are written to `stderr`, output can be piped directly into another command:
-
-```cmd
-ytsubs VIDEO_ID --format txt | another-command
-```
-
-### 5.4 Explicit output file
-
-```cmd
-ytsubs VIDEO_ID --format srt -o transcript.srt
-```
-
-### 5.5 Selecting a language
-
-```cmd
-ytsubs VIDEO_ID --lang en
-```
-
-```cmd
-ytsubs VIDEO_ID --lang cs
-```
-
-The requested language must exist as a real subtitle track exposed by YouTube. Automatic translation is not used as a fallback.
-
-### 5.6 Version
-
-```cmd
-ytsubs --version
-```
-
-## 6. Original-language selection
-
-YouTube does not expose one universally reliable original-language field for every video through the APIs used by this project.
-
-YouTubeSubs therefore uses this deterministic heuristic:
-
-1. If `yt-dlp` reports a language and that language matches an available real subtitle track, use that language.
-2. Otherwise use the language of the first auto-generated subtitle track, because it normally corresponds to the spoken audio.
-3. If no auto-generated track exists, use the first manual subtitle track returned by YouTube.
-4. Within the selected language, prefer a manual track over an auto-generated track.
-
-This works well for typical videos but cannot guarantee the real original language in every unusual case. For videos with several manually uploaded language tracks and insufficient metadata, select the desired language explicitly.
-
-## 7. Exit codes
+## Exit codes
 
 | Code | Meaning |
 | ---: | --- |
 | 0 | Success |
-| 2 | Invalid argument, URL, or video ID |
-| 3 | No usable subtitle track or requested language unavailable |
-| 4 | YouTube, network, or transcript API failure |
+| 2 | Invalid argument, URL, video ID, or option |
+| 3 | No usable subtitle track / requested language unavailable |
+| 4 | YouTube, network, or caption API failure |
 | 5 | Output file write failure |
 
-This makes YouTubeSubs suitable for batch files and other automation.
+## Configuration and logging
 
-## 8. Local configuration
-
-Runtime configuration is stored in:
+Configuration is stored at:
 
 ```text
 %LOCALAPPDATA%\YouTubeSubs\config.json
 ```
 
-The file contains application settings and aggregate timing statistics used by the adaptive progress estimator.
+The configuration contains the last selected output format, learned progress timing data, sample count, and logging mode.
 
-It does not intentionally store downloaded transcript contents, YouTube URLs, video IDs, or video titles as history.
+Logging modes are:
 
-## 9. Logging
+- `off` — no file logging
+- `single` — overwrite the log at application start
+- `all` — append across application runs
 
-The configuration supports three logging modes:
-
-```json
-"logging": "off"
-```
-
-Available values:
-
-- `off` — no log file.
-- `single` — one log for the current application run; previous log content is replaced.
-- `all` — append activity across multiple runs.
-
-When enabled, the log is stored in:
+The log file is:
 
 ```text
 %LOCALAPPDATA%\YouTubeSubs\ytsubs.log
 ```
 
-## 10. Development branches
+## Development and upgrade
 
-- `main` — stable releases.
-- `devel` — active development.
+Development is performed on branch `devel`. The preserved Python reference implementation is branch `ALFA`.
 
-Users should normally stay on `main`.
-
-Developers and testers can switch to the development branch with:
+Run:
 
 ```cmd
-git switch devel
 upgrade.cmd
 ```
 
-To return to the stable version:
+The updater:
 
-```cmd
-git switch main
-upgrade.cmd
-```
+1. checks whether `upgrade.cmd` itself is current and runs the newer copy first when necessary
+2. refuses to overwrite tracked local changes
+3. synchronizes the current branch with origin
+4. verifies that a .NET 10 SDK is available
+5. installs the current Microsoft .NET 10 SDK through `winget` when needed
+6. removes obsolete local Python/Nuitka build artifacts left by the previous implementation
+7. reconstructs and validates `assets\ytsubs.ico` from the tracked Base64 source
+8. restores NuGet dependencies
+9. builds the sources in Release mode
+10. publishes a self-contained single-file `win-x64` candidate
+11. validates `ytsubs.exe --version` before replacing the existing executable
+12. copies the candidate to the repository root
+13. performs a portable smoke test from an empty temporary directory
+14. reports executable size and a CLI cold-start sample
 
-## 11. Dependencies
-
-YouTubeSubs primarily uses:
-
-- `youtube-transcript-api` for subtitle discovery and retrieval.
-- `yt-dlp` for video metadata such as title and language hints.
-
-YouTube changes its internal behavior frequently. Running `upgrade.cmd` keeps dependencies within the compatible ranges defined by the project.
-
-## 12. Known limitations
-
-- Availability of subtitles depends entirely on what YouTube exposes for the selected video.
-- YouTube can rate-limit or block automated requests from some IP addresses.
-- The original language cannot be identified with absolute certainty for every possible video.
-- Cancel can stop the workflow between network operations, but an HTTP request already in progress may need to return before the worker thread fully terminates.
-- The GUI workflow is primarily designed and tested for Windows.
+The application icon stored as `assets/ytsubs.ico.b64` is embedded directly into the .NET executable during publish and reused by the WinForms windows.
