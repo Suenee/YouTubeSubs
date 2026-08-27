@@ -105,23 +105,28 @@ if exist "build\publish" rmdir /s /q "build\publish"
 if not exist "build\publish\ytsubs.exe" (echo ERROR: Publish did not create build\publish\ytsubs.exe.& exit /b 25)
 
 echo === CANDIDATE VALIDATION ===
-set "EXPECTED_OUTPUT=ytsubs 2.03"
+set "EXPECTED_OUTPUT=ytsubs 2.04"
 set "CANDIDATE_VERSION="
 for /f "delims=" %%V in ('powershell -NoProfile -Command "$p=New-Object Diagnostics.Process; $p.StartInfo.FileName='%CD%\build\publish\ytsubs.exe'; $p.StartInfo.Arguments='--version'; $p.StartInfo.UseShellExecute=$false; $p.StartInfo.RedirectStandardOutput=$true; $p.StartInfo.RedirectStandardError=$true; $p.StartInfo.CreateNoWindow=$true; [void]$p.Start(); $o=$p.StandardOutput.ReadToEnd().Trim(); $p.WaitForExit(); if($p.ExitCode -eq 0){$o}"') do set "CANDIDATE_VERSION=%%V"
 if not defined CANDIDATE_VERSION (echo ERROR: .NET candidate CLI validation failed. Existing ytsubs.exe was left untouched.& exit /b 26)
 if /i not "!CANDIDATE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Candidate version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !CANDIDATE_VERSION!& exit /b 27)
 
 echo === CMD SYNCHRONIZATION TEST ===
+set "SYNC_SCRIPT=%TEMP%\ytsubs_cmd_sync_%RANDOM%_%RANDOM%.cmd"
 set "SYNC_OUTPUT=%TEMP%\ytsubs_cmd_sync_%RANDOM%_%RANDOM%.txt"
 set "SYNC_EXPECTED=%TEMP%\ytsubs_cmd_sync_expected_%RANDOM%_%RANDOM%.txt"
->"!SYNC_EXPECTED!" echo ytsubs 2.03
+>"!SYNC_SCRIPT!" echo @echo off
+>>"!SYNC_SCRIPT!" echo "%CD%\build\publish\ytsubs.exe" --version
+>>"!SYNC_SCRIPT!" echo if errorlevel 1 exit /b 91
+>>"!SYNC_SCRIPT!" echo echo __AFTER__
+>"!SYNC_EXPECTED!" echo ytsubs 2.04
 >>"!SYNC_EXPECTED!" echo __AFTER__
-"%ComSpec%" /d /s /c ""%CD%\build\publish\ytsubs.exe" --version ^& echo __AFTER__" >"!SYNC_OUTPUT!" 2>&1
+call "!SYNC_SCRIPT!" >"!SYNC_OUTPUT!" 2>&1
 set "SYNC_RC=!ERRORLEVEL!"
 if not "!SYNC_RC!"=="0" (
-  echo ERROR: cmd.exe synchronization test could not execute successfully.
+  echo ERROR: cmd.exe synchronization test could not execute successfully. Exit code !SYNC_RC!.
   if exist "!SYNC_OUTPUT!" type "!SYNC_OUTPUT!"
-  del "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
+  del "!SYNC_SCRIPT!" "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
   echo        Existing ytsubs.exe was left untouched.
   exit /b 32
 )
@@ -132,11 +137,11 @@ if errorlevel 1 (
   type "!SYNC_EXPECTED!"
   echo        Actual:
   type "!SYNC_OUTPUT!"
-  del "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
+  del "!SYNC_SCRIPT!" "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
   echo        Existing ytsubs.exe was left untouched.
   exit /b 32
 )
-del "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
+del "!SYNC_SCRIPT!" "!SYNC_OUTPUT!" "!SYNC_EXPECTED!" >nul 2>nul
 
 echo === INSTALL CANDIDATE ===
 copy /y "build\publish\ytsubs.exe" "%CD%\ytsubs.exe" >nul || (echo ERROR: Unable to install validated ytsubs.exe.& exit /b 28)
@@ -159,7 +164,7 @@ powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [Sy
 
 echo Version validation: !CANDIDATE_VERSION!
 echo Executable validation: ytsubs.exe
-echo CLI synchronization: cmd.exe waits for process completion
+echo CLI synchronization: temporary cmd script completed in order
 echo Portable validation: standalone EXE passed outside repository
 echo Build system: .NET 10 WinForms, self-contained single-file win-x64
 echo Application icon: embedded assets\ytsubs.ico
