@@ -8,7 +8,7 @@ a = Analysis(
     ["ytsubs_app.py"],
     pathex=[],
     binaries=yt_dlp_binaries + yta_binaries,
-    datas=[("assets/ytsubs.ico", "assets"), ("assets/ytsubs.png", "assets")] + yt_dlp_datas + yta_datas,
+    datas=[("assets/ytsubs.ico", "assets")] + yt_dlp_datas + yta_datas,
     hiddenimports=yt_dlp_hidden + yta_hidden,
     hookspath=[],
     hooksconfig={},
@@ -30,6 +30,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=False,
+    console=True,
+    hide_console="hide-early",
     icon=["assets/ytsubs.ico"],
 )
