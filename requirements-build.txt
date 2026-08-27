@@ -1,4 +1,0 @@
--r requirements.txt
-nuitka>=2.8,<3
-ordered-set>=4.1
-zstandard>=0.23
