@@ -4,7 +4,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 if defined YTSUBS_REPO_DIR (cd /d "%YTSUBS_REPO_DIR%") else (set "YTSUBS_REPO_DIR=%~dp0"& cd /d "%~dp0")
 where git >nul 2>nul || (echo ERROR: Git was not found.& exit /b 10)
-where py >nul 2>nul || where python >nul 2>nul || (echo ERROR: Python was not found.& exit /b 11)
+where py >nul 2>nul || (echo ERROR: Python Launcher ^(py.exe^) was not found.& exit /b 11)
 for /f "delims=" %%B in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set "BRANCH=%%B"
 if not defined BRANCH (echo ERROR: This directory is not a Git working tree.& exit /b 12)
 
@@ -46,24 +46,50 @@ if /i "!LOCAL_SHA!"=="!REMOTE_SHA!" (
   git reset --hard "origin/%BRANCH%" || (echo ERROR: Unable to synchronize local branch with origin/%BRANCH%.& exit /b 17)
 )
 
+echo === PYTHON 3.12 BUILD RUNTIME CHECK ===
+py -3.12 -c "import sys; assert sys.version_info[:2] == (3,12); print(sys.executable)" > "%TEMP%\ytsubs_py312.txt" 2>nul
+if errorlevel 1 (
+  del "%TEMP%\ytsubs_py312.txt" >nul 2>nul
+  echo ERROR: Python 3.12 is required for the Nuitka/MinGW64 build.
+  echo        Python 3.13 is intentionally not used because Nuitka 2.8.x cannot compile it with MinGW64.
+  echo        Install 64-bit Python 3.12 with the Python Launcher, then run upgrade.cmd again.
+  echo        Existing ytsubs.exe was left untouched.
+  exit /b 18
+)
+set /p "PY312_EXE=" < "%TEMP%\ytsubs_py312.txt"
+del "%TEMP%\ytsubs_py312.txt" >nul 2>nul
+echo Build Python: !PY312_EXE!
+
 echo === PYTHON BUILD ENVIRONMENT ===
-if not exist ".venv\Scripts\python.exe" (py -3 -m venv .venv 2>nul || python -m venv .venv || (echo ERROR: Unable to create .venv.& exit /b 18))
-".venv\Scripts\python.exe" -m pip install --upgrade pip || exit /b 19
-".venv\Scripts\python.exe" -m pip install --upgrade -r requirements-build.txt || exit /b 20
+set "RECREATE_VENV=0"
+if not exist ".venv\Scripts\python.exe" set "RECREATE_VENV=1"
+if exist ".venv\Scripts\python.exe" (
+  ".venv\Scripts\python.exe" -c "import sys; raise SystemExit(0 if sys.version_info[:2] == (3,12) else 1)" >nul 2>nul
+  if errorlevel 1 set "RECREATE_VENV=1"
+)
+if "!RECREATE_VENV!"=="1" (
+  echo Recreating .venv with Python 3.12...
+  if exist ".venv" rmdir /s /q ".venv"
+  if exist ".venv" (echo ERROR: Unable to remove existing .venv.& exit /b 19)
+  py -3.12 -m venv .venv || (echo ERROR: Unable to create Python 3.12 .venv.& exit /b 20)
+)
+".venv\Scripts\python.exe" -c "import sys; print('Build venv Python: %d.%d.%d' %% sys.version_info[:3]); assert sys.version_info[:2] == (3,12)" || (echo ERROR: Build .venv is not Python 3.12.& exit /b 21)
+".venv\Scripts\python.exe" -m pip install --upgrade pip || exit /b 22
+".venv\Scripts\python.exe" -m pip install --upgrade -r requirements-build.txt || exit /b 23
 ".venv\Scripts\python.exe" -m pip uninstall -y yt-dlp >nul 2>nul
 
 echo === SOURCE VALIDATION ===
-".venv\Scripts\python.exe" -m py_compile ytsubs.py ytsubs_app.py || (echo ERROR: Python syntax validation failed.& exit /b 21)
-findstr /s /i /c:"from yt_dlp" /c:"import yt_dlp" ytsubs.py ytsubs_app.py >nul && (echo ERROR: Runtime source still imports yt-dlp.& exit /b 22)
-if not exist "assets\ytsubs.ico.b64" (echo ERROR: Missing encoded Windows icon asset: assets\ytsubs.ico.b64& exit /b 23)
+".venv\Scripts\python.exe" -m py_compile ytsubs.py ytsubs_app.py || (echo ERROR: Python syntax validation failed.& exit /b 24)
+findstr /s /i /c:"from yt_dlp" /c:"import yt_dlp" ytsubs.py ytsubs_app.py >nul && (echo ERROR: Runtime source still imports yt-dlp.& exit /b 25)
+if not exist "assets\ytsubs.ico.b64" (echo ERROR: Missing encoded Windows icon asset: assets\ytsubs.ico.b64& exit /b 26)
 
 echo === ICON VALIDATION ===
-".venv\Scripts\python.exe" -c "import base64,struct; from pathlib import Path; s=Path(r'assets\ytsubs.ico.b64'); raw=base64.b64decode(s.read_text(encoding='ascii'),validate=True); r,t,n=struct.unpack_from('<HHH',raw,0); assert r==0 and t==1 and n>=1; head=6+16*n; assert len(raw)>=head; e=[struct.unpack_from('<BBBBHHII',raw,6+16*i) for i in range(n)]; assert all(x[6]>0 and x[7]>=head and x[7]+x[6]<=len(raw) for x in e); Path(r'assets\ytsubs.ico').write_bytes(raw)" || (echo ERROR: Encoded Windows ICO asset is invalid.& exit /b 24)
+".venv\Scripts\python.exe" -c "import base64,struct; from pathlib import Path; s=Path(r'assets\ytsubs.ico.b64'); raw=base64.b64decode(s.read_text(encoding='ascii'),validate=True); r,t,n=struct.unpack_from('<HHH',raw,0); assert r==0 and t==1 and n>=1; head=6+16*n; assert len(raw)>=head; e=[struct.unpack_from('<BBBBHHII',raw,6+16*i) for i in range(n)]; assert all(x[6]>0 and x[7]>=head and x[7]+x[6]<=len(raw) for x in e); Path(r'assets\ytsubs.ico').write_bytes(raw)" || (echo ERROR: Encoded Windows ICO asset is invalid.& exit /b 27)
 
 echo === NUITKA STANDALONE BUILD ===
-echo yt-dlp has been removed from the runtime; Nuitka no longer analyzes its extractor tree.
+echo Build runtime is pinned to Python 3.12 for MinGW64 compatibility.
 if exist "build\nuitka" rmdir /s /q "build\nuitka"
-mkdir "build\nuitka" >nul 2>nul || (echo ERROR: Unable to create Nuitka build directory.& exit /b 25)
+mkdir "build\nuitka" >nul 2>nul || (echo ERROR: Unable to create Nuitka build directory.& exit /b 28)
 ".venv\Scripts\python.exe" -m nuitka ^
   --mode=onefile ^
   --onefile-no-compression ^
@@ -79,31 +105,31 @@ mkdir "build\nuitka" >nul 2>nul || (echo ERROR: Unable to create Nuitka build di
   --nofollow-import-to=unittest ^
   --nofollow-import-to=pydoc ^
   --nofollow-import-to=doctest ^
-  ytsubs_app.py || (echo ERROR: Nuitka standalone build failed. Existing ytsubs.exe was left untouched.& exit /b 26)
-if not exist "build\nuitka\ytsubs.exe" (echo ERROR: Nuitka did not create build\nuitka\ytsubs.exe.& exit /b 27)
+  ytsubs_app.py || (echo ERROR: Nuitka standalone build failed. Existing ytsubs.exe was left untouched.& exit /b 29)
+if not exist "build\nuitka\ytsubs.exe" (echo ERROR: Nuitka did not create build\nuitka\ytsubs.exe.& exit /b 30)
 
 echo === CANDIDATE VALIDATION ===
 set "EXPECTED_VERSION="
 for /f "tokens=3" %%V in ('findstr /b /c:"version = " pyproject.toml') do set "EXPECTED_VERSION=%%~V"
-if not defined EXPECTED_VERSION (echo ERROR: Unable to read project version from pyproject.toml.& exit /b 28)
+if not defined EXPECTED_VERSION (echo ERROR: Unable to read project version from pyproject.toml.& exit /b 31)
 set "EXPECTED_OUTPUT=ytsubs !EXPECTED_VERSION!"
 set "CANDIDATE_VERSION="
 for /f "delims=" %%V in ('"%CD%\build\nuitka\ytsubs.exe" --version 2^>nul') do set "CANDIDATE_VERSION=%%V"
-if not defined CANDIDATE_VERSION (echo ERROR: Nuitka candidate CLI validation failed. Existing ytsubs.exe was left untouched.& exit /b 29)
-if /i not "!CANDIDATE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Candidate version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !CANDIDATE_VERSION!& exit /b 30)
+if not defined CANDIDATE_VERSION (echo ERROR: Nuitka candidate CLI validation failed. Existing ytsubs.exe was left untouched.& exit /b 32)
+if /i not "!CANDIDATE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Candidate version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !CANDIDATE_VERSION!& exit /b 33)
 
 echo === INSTALL CANDIDATE ===
-copy /y "build\nuitka\ytsubs.exe" "%CD%\ytsubs.exe" >nul || (echo ERROR: Unable to install validated ytsubs.exe.& exit /b 31)
+copy /y "build\nuitka\ytsubs.exe" "%CD%\ytsubs.exe" >nul || (echo ERROR: Unable to install validated ytsubs.exe.& exit /b 34)
 
 echo === PORTABLE SMOKE TEST ===
 set "PORTABLE_DIR=%TEMP%\ytsubs_portable_%RANDOM%_%RANDOM%"
-mkdir "!PORTABLE_DIR!" >nul 2>nul || (echo ERROR: Unable to create portable test directory.& exit /b 32)
-copy /y "%CD%\ytsubs.exe" "!PORTABLE_DIR!\ytsubs.exe" >nul || (rmdir /s /q "!PORTABLE_DIR!" >nul 2>nul& echo ERROR: Unable to copy ytsubs.exe for portable test.& exit /b 33)
+mkdir "!PORTABLE_DIR!" >nul 2>nul || (echo ERROR: Unable to create portable test directory.& exit /b 35)
+copy /y "%CD%\ytsubs.exe" "!PORTABLE_DIR!\ytsubs.exe" >nul || (rmdir /s /q "!PORTABLE_DIR!" >nul 2>nul& echo ERROR: Unable to copy ytsubs.exe for portable test.& exit /b 36)
 set "PORTABLE_VERSION="
 for /f "delims=" %%V in ('cd /d "!PORTABLE_DIR!" ^&^& ytsubs.exe --version 2^>nul') do set "PORTABLE_VERSION=%%V"
 rmdir /s /q "!PORTABLE_DIR!" >nul 2>nul
-if not defined PORTABLE_VERSION (echo ERROR: Portable ytsubs.exe failed outside the repository.& exit /b 34)
-if /i not "!PORTABLE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Portable executable version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !PORTABLE_VERSION!& exit /b 35)
+if not defined PORTABLE_VERSION (echo ERROR: Portable ytsubs.exe failed outside the repository.& exit /b 37)
+if /i not "!PORTABLE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Portable executable version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !PORTABLE_VERSION!& exit /b 38)
 
 echo === STARTUP DIAGNOSTICS ===
 set "EXE_BYTES="
@@ -116,7 +142,7 @@ for /f "delims=" %%T in ('powershell -NoProfile -Command "$sw=[Diagnostics.Stopw
 echo Version validation: !CANDIDATE_VERSION!
 echo Executable validation: ytsubs.exe
 echo Portable validation: standalone EXE passed outside repository
-echo Build system: Nuitka onefile, C-compiled Python application
+echo Build system: Nuitka onefile, Python 3.12 + MinGW64
 echo Runtime dependencies: youtube-transcript-api + requests; yt-dlp removed
 echo GUI mode: attach existing console only; no console created on GUI launch
 echo Startup optimization: uncompressed onefile payload; no yt-dlp extractor tree
