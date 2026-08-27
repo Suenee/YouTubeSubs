@@ -112,7 +112,7 @@ if not defined CANDIDATE_VERSION (echo ERROR: .NET candidate CLI validation fail
 if /i not "!CANDIDATE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Candidate version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !CANDIDATE_VERSION!& exit /b 27)
 
 echo === CMD SYNCHRONIZATION TEST ===
-powershell -NoProfile -Command "$exe='%CD%\build\publish\ytsubs.exe'; $cmd='""'+$exe+'" --version ^& echo __AFTER__"'; $o=& $env:ComSpec /d /s /c $cmd; if($o.Count -ne 2 -or $o[0].Trim() -ne 'ytsubs 2.02' -or $o[1].Trim() -ne '__AFTER__'){Write-Host ('Unexpected cmd output: '+($o -join ' | ')); exit 1}" || (echo ERROR: cmd.exe did not wait for the CLI candidate to finish.& echo        Existing ytsubs.exe was left untouched.& exit /b 32)
+powershell -NoProfile -Command "$exe='%CD%\build\publish\ytsubs.exe'; $cmd='""'+$exe+'" --version & echo __AFTER__"'; $o=& $env:ComSpec /d /s /c $cmd; if($o.Count -ne 2 -or $o[0].Trim() -ne 'ytsubs 2.02' -or $o[1].Trim() -ne '__AFTER__'){Write-Host ('Unexpected cmd output: '+($o -join ' | ')); exit 1}" || (echo ERROR: cmd.exe did not wait for the CLI candidate to finish.& echo        Existing ytsubs.exe was left untouched.& exit /b 32)
 
 echo === INSTALL CANDIDATE ===
 copy /y "build\publish\ytsubs.exe" "%CD%\ytsubs.exe" >nul || (echo ERROR: Unable to install validated ytsubs.exe.& exit /b 28)
