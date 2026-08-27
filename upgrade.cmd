@@ -74,12 +74,23 @@ if not defined ACTUAL_VERSION (echo ERROR: Standalone ytsubs.exe CLI validation 
 set "EXPECTED_OUTPUT=ytsubs !EXPECTED_VERSION!"
 if /i not "!ACTUAL_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !ACTUAL_VERSION!& exit /b 30)
 
+echo === PORTABLE SMOKE TEST ===
+set "PORTABLE_DIR=%TEMP%\ytsubs_portable_%RANDOM%_%RANDOM%"
+mkdir "!PORTABLE_DIR!" >nul 2>nul || (echo ERROR: Unable to create portable test directory.& exit /b 31)
+copy /y "%CD%\ytsubs.exe" "!PORTABLE_DIR!\ytsubs.exe" >nul || (rmdir /s /q "!PORTABLE_DIR!" >nul 2>nul& echo ERROR: Unable to copy ytsubs.exe for portable test.& exit /b 32)
+set "PORTABLE_VERSION="
+for /f "delims=" %%V in ('cd /d "!PORTABLE_DIR!" ^&^& ytsubs.exe --version 2^>nul') do set "PORTABLE_VERSION=%%V"
+rmdir /s /q "!PORTABLE_DIR!" >nul 2>nul
+if not defined PORTABLE_VERSION (echo ERROR: Portable ytsubs.exe failed outside the repository.& exit /b 33)
+if /i not "!PORTABLE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Portable executable version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !PORTABLE_VERSION!& exit /b 34)
+
 ".venv\Scripts\python.exe" -c "import ctypes; ctypes.windll.shell32.SHChangeNotify(0x08000000,0,None,None)" >nul 2>nul
 
 echo Version validation: !ACTUAL_VERSION!
 echo Executable validation: ytsubs.exe
+echo Portable validation: standalone EXE passed outside repository
+echo GUI mode: native windowed EXE, no console window
 echo Icon validation: encoded ICO -^> structural validation -^> embedded EXE icon
-echo Console mode: console-enabled EXE with automatic hide on GUI launch
 echo Format validation: .srt .sub .txt .vtt
 echo.
 echo YouTubeSubs update completed successfully on branch %BRANCH%.
