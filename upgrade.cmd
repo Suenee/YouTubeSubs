@@ -54,49 +54,68 @@ if not exist ".venv\Scripts\python.exe" (py -3 -m venv .venv 2>nul || python -m 
 echo === SOURCE VALIDATION ===
 ".venv\Scripts\python.exe" -m py_compile ytsubs.py ytsubs_app.py || (echo ERROR: Python syntax validation failed.& exit /b 21)
 if not exist "assets\ytsubs.ico.b64" (echo ERROR: Missing encoded Windows icon asset: assets\ytsubs.ico.b64& exit /b 22)
-if not exist "ytsubs.spec" (echo ERROR: Missing PyInstaller spec: ytsubs.spec& exit /b 23)
 
 echo === ICON VALIDATION ===
 ".venv\Scripts\python.exe" -c "import base64,struct; from pathlib import Path; s=Path(r'assets\ytsubs.ico.b64'); raw=base64.b64decode(s.read_text(encoding='ascii'),validate=True); r,t,n=struct.unpack_from('<HHH',raw,0); assert r==0 and t==1 and n>=1; head=6+16*n; assert len(raw)>=head; e=[struct.unpack_from('<BBBBHHII',raw,6+16*i) for i in range(n)]; assert all(x[6]>0 and x[7]>=head and x[7]+x[6]<=len(raw) for x in e); Path(r'assets\ytsubs.ico').write_bytes(raw)" || (echo ERROR: Encoded Windows ICO asset is invalid.& exit /b 24)
 
-echo === STANDALONE BUILD ===
-if exist "ytsubs.exe" del /q "ytsubs.exe" || exit /b 25
-".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean --distpath "%CD%" --workpath "%CD%\build\pyinstaller" ytsubs.spec || (echo ERROR: Standalone build failed.& exit /b 26)
-if not exist "ytsubs.exe" (echo ERROR: ytsubs.exe was not created.& exit /b 27)
+echo === NUITKA STANDALONE BUILD ===
+echo First Nuitka build may take longer while the Windows C compiler is downloaded and cached.
+if exist "build\nuitka" rmdir /s /q "build\nuitka"
+mkdir "build\nuitka" >nul 2>nul || (echo ERROR: Unable to create Nuitka build directory.& exit /b 25)
+".venv\Scripts\python.exe" -m nuitka ^
+  --mode=onefile ^
+  --onefile-no-compression ^
+  --windows-console-mode=attach ^
+  --enable-plugin=tk-inter ^
+  --windows-icon-from-ico="assets\ytsubs.ico" ^
+  --include-data-file="assets\ytsubs.ico=assets/ytsubs.ico" ^
+  --output-dir="build\nuitka" ^
+  --output-filename="ytsubs.exe" ^
+  --mingw64 ^
+  --assume-yes-for-downloads ^
+  --nofollow-import-to=unittest ^
+  --nofollow-import-to=pydoc ^
+  --nofollow-import-to=doctest ^
+  ytsubs_app.py || (echo ERROR: Nuitka standalone build failed. Existing ytsubs.exe was left untouched.& exit /b 26)
+if not exist "build\nuitka\ytsubs.exe" (echo ERROR: Nuitka did not create build\nuitka\ytsubs.exe.& exit /b 27)
 
-echo === EXECUTABLE VALIDATION ===
+echo === CANDIDATE VALIDATION ===
 set "EXPECTED_VERSION="
 for /f "tokens=3" %%V in ('findstr /b /c:"version = " pyproject.toml') do set "EXPECTED_VERSION=%%~V"
 if not defined EXPECTED_VERSION (echo ERROR: Unable to read project version from pyproject.toml.& exit /b 28)
-set "ACTUAL_VERSION="
-for /f "delims=" %%V in ('"%CD%\ytsubs.exe" --version 2^>nul') do set "ACTUAL_VERSION=%%V"
-if not defined ACTUAL_VERSION (echo ERROR: Standalone ytsubs.exe CLI validation failed.& exit /b 29)
 set "EXPECTED_OUTPUT=ytsubs !EXPECTED_VERSION!"
-if /i not "!ACTUAL_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !ACTUAL_VERSION!& exit /b 30)
+set "CANDIDATE_VERSION="
+for /f "delims=" %%V in ('"%CD%\build\nuitka\ytsubs.exe" --version 2^>nul') do set "CANDIDATE_VERSION=%%V"
+if not defined CANDIDATE_VERSION (echo ERROR: Nuitka candidate CLI validation failed. Existing ytsubs.exe was left untouched.& exit /b 29)
+if /i not "!CANDIDATE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Candidate version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !CANDIDATE_VERSION!& exit /b 30)
+
+echo === INSTALL CANDIDATE ===
+copy /y "build\nuitka\ytsubs.exe" "%CD%\ytsubs.exe" >nul || (echo ERROR: Unable to install validated ytsubs.exe.& exit /b 31)
 
 echo === PORTABLE SMOKE TEST ===
 set "PORTABLE_DIR=%TEMP%\ytsubs_portable_%RANDOM%_%RANDOM%"
-mkdir "!PORTABLE_DIR!" >nul 2>nul || (echo ERROR: Unable to create portable test directory.& exit /b 31)
-copy /y "%CD%\ytsubs.exe" "!PORTABLE_DIR!\ytsubs.exe" >nul || (rmdir /s /q "!PORTABLE_DIR!" >nul 2>nul& echo ERROR: Unable to copy ytsubs.exe for portable test.& exit /b 32)
+mkdir "!PORTABLE_DIR!" >nul 2>nul || (echo ERROR: Unable to create portable test directory.& exit /b 32)
+copy /y "%CD%\ytsubs.exe" "!PORTABLE_DIR!\ytsubs.exe" >nul || (rmdir /s /q "!PORTABLE_DIR!" >nul 2>nul& echo ERROR: Unable to copy ytsubs.exe for portable test.& exit /b 33)
 set "PORTABLE_VERSION="
 for /f "delims=" %%V in ('cd /d "!PORTABLE_DIR!" ^&^& ytsubs.exe --version 2^>nul') do set "PORTABLE_VERSION=%%V"
 rmdir /s /q "!PORTABLE_DIR!" >nul 2>nul
-if not defined PORTABLE_VERSION (echo ERROR: Portable ytsubs.exe failed outside the repository.& exit /b 33)
-if /i not "!PORTABLE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Portable executable version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !PORTABLE_VERSION!& exit /b 34)
+if not defined PORTABLE_VERSION (echo ERROR: Portable ytsubs.exe failed outside the repository.& exit /b 34)
+if /i not "!PORTABLE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Portable executable version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !PORTABLE_VERSION!& exit /b 35)
 
 echo === STARTUP DIAGNOSTICS ===
 set "EXE_BYTES="
 for %%F in ("%CD%\ytsubs.exe") do set "EXE_BYTES=%%~zF"
 set "STARTUP_MS="
-for /f "delims=" %%T in ('powershell -NoProfile -Command "$sw=[Diagnostics.Stopwatch]::StartNew(); ^& '%CD%\ytsubs.exe' --version ^| Out-Null; $sw.Stop(); [int]$sw.Elapsed.TotalMilliseconds"') do set "STARTUP_MS=%%T"
+for /f "delims=" %%T in ('powershell -NoProfile -Command "$sw=[Diagnostics.Stopwatch]::StartNew(); $p=Start-Process -FilePath '%CD%\ytsubs.exe' -ArgumentList '--version' -PassThru -Wait -WindowStyle Hidden; $sw.Stop(); [int]$sw.Elapsed.TotalMilliseconds"') do set "STARTUP_MS=%%T"
 
 ".venv\Scripts\python.exe" -c "import ctypes; ctypes.windll.shell32.SHChangeNotify(0x08000000,0,None,None)" >nul 2>nul
 
-echo Version validation: !ACTUAL_VERSION!
+echo Version validation: !CANDIDATE_VERSION!
 echo Executable validation: ytsubs.exe
 echo Portable validation: standalone EXE passed outside repository
-echo GUI mode: native windowed EXE, no console window
-echo Bundle optimization: minimal PyInstaller analysis, optimize=1, UPX disabled
+echo Build system: Nuitka onefile, C-compiled Python application
+echo GUI mode: attach existing console only; no console created on GUI launch
+echo Startup optimization: uncompressed onefile payload + lazy yt-dlp import
 echo Executable size: !EXE_BYTES! bytes
 if defined STARTUP_MS echo CLI cold-start sample: !STARTUP_MS! ms
 echo Icon validation: encoded ICO -^> structural validation -^> embedded EXE icon
