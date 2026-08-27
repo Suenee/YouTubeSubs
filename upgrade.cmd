@@ -50,16 +50,18 @@ echo === PYTHON BUILD ENVIRONMENT ===
 if not exist ".venv\Scripts\python.exe" (py -3 -m venv .venv 2>nul || python -m venv .venv || (echo ERROR: Unable to create .venv.& exit /b 18))
 ".venv\Scripts\python.exe" -m pip install --upgrade pip || exit /b 19
 ".venv\Scripts\python.exe" -m pip install --upgrade -r requirements-build.txt || exit /b 20
+".venv\Scripts\python.exe" -m pip uninstall -y yt-dlp >nul 2>nul
 
 echo === SOURCE VALIDATION ===
 ".venv\Scripts\python.exe" -m py_compile ytsubs.py ytsubs_app.py || (echo ERROR: Python syntax validation failed.& exit /b 21)
-if not exist "assets\ytsubs.ico.b64" (echo ERROR: Missing encoded Windows icon asset: assets\ytsubs.ico.b64& exit /b 22)
+findstr /s /i /c:"from yt_dlp" /c:"import yt_dlp" ytsubs.py ytsubs_app.py >nul && (echo ERROR: Runtime source still imports yt-dlp.& exit /b 22)
+if not exist "assets\ytsubs.ico.b64" (echo ERROR: Missing encoded Windows icon asset: assets\ytsubs.ico.b64& exit /b 23)
 
 echo === ICON VALIDATION ===
 ".venv\Scripts\python.exe" -c "import base64,struct; from pathlib import Path; s=Path(r'assets\ytsubs.ico.b64'); raw=base64.b64decode(s.read_text(encoding='ascii'),validate=True); r,t,n=struct.unpack_from('<HHH',raw,0); assert r==0 and t==1 and n>=1; head=6+16*n; assert len(raw)>=head; e=[struct.unpack_from('<BBBBHHII',raw,6+16*i) for i in range(n)]; assert all(x[6]>0 and x[7]>=head and x[7]+x[6]<=len(raw) for x in e); Path(r'assets\ytsubs.ico').write_bytes(raw)" || (echo ERROR: Encoded Windows ICO asset is invalid.& exit /b 24)
 
 echo === NUITKA STANDALONE BUILD ===
-echo First Nuitka build may take longer while the Windows C compiler is downloaded and cached.
+echo yt-dlp has been removed from the runtime; Nuitka no longer analyzes its extractor tree.
 if exist "build\nuitka" rmdir /s /q "build\nuitka"
 mkdir "build\nuitka" >nul 2>nul || (echo ERROR: Unable to create Nuitka build directory.& exit /b 25)
 ".venv\Scripts\python.exe" -m nuitka ^
@@ -73,6 +75,7 @@ mkdir "build\nuitka" >nul 2>nul || (echo ERROR: Unable to create Nuitka build di
   --output-filename="ytsubs.exe" ^
   --mingw64 ^
   --assume-yes-for-downloads ^
+  --nofollow-import-to=yt_dlp ^
   --nofollow-import-to=unittest ^
   --nofollow-import-to=pydoc ^
   --nofollow-import-to=doctest ^
@@ -114,8 +117,9 @@ echo Version validation: !CANDIDATE_VERSION!
 echo Executable validation: ytsubs.exe
 echo Portable validation: standalone EXE passed outside repository
 echo Build system: Nuitka onefile, C-compiled Python application
+echo Runtime dependencies: youtube-transcript-api + requests; yt-dlp removed
 echo GUI mode: attach existing console only; no console created on GUI launch
-echo Startup optimization: uncompressed onefile payload + lazy yt-dlp import
+echo Startup optimization: uncompressed onefile payload; no yt-dlp extractor tree
 echo Executable size: !EXE_BYTES! bytes
 if defined STARTUP_MS echo CLI cold-start sample: !STARTUP_MS! ms
 echo Icon validation: encoded ICO -^> structural validation -^> embedded EXE icon
