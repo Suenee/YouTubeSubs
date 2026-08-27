@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## 2.06 - 28.08.2026
+
+- End the experimental single-EXE GUI/CLI subsystem work from 2.02 through 2.05 and separate the two Windows execution models cleanly.
+- Keep `ytsubs.exe` as a Windows GUI-subsystem WinForms application, so normal desktop launch never allocates a console window.
+- Add `ytsubs-cli.exe` as a true Windows console-subsystem application with synchronous `cmd.exe` behavior, stdout, stderr, pipes, redirection, and exit codes.
+- Make `ytsubs-cli.exe` with no arguments launch the adjacent `ytsubs.exe` GUI and exit successfully.
+- Keep subtitle retrieval and formatting code shared between GUI and CLI instead of maintaining two implementations.
+- Remove console attach/hide/detach workarounds from the GUI entry point.
+- Update `upgrade.cmd` to build, publish, validate, and install both self-contained single-file executables.
+- Validate that `ytsubs.exe` uses PE subsystem 2 (Windows GUI) and `ytsubs-cli.exe` uses PE subsystem 3 (Windows console) before installation.
+- Preserve the existing icon, TXT normalization, subtitle formats, configuration, logging, and CLI exit-code semantics.
+
 ## 2.05 - 28.08.2026
 
 - Restore the Windows GUI PE subsystem (`WinExe`) so launching `ytsubs.exe` normally does not create a console window, eliminating the terminal flash introduced in 2.02.
