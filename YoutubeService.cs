@@ -135,12 +135,46 @@ internal sealed class YoutubeService
     {
         return format switch
         {
-            "txt" => string.Join(Environment.NewLine, track.Captions.Select(c => c.Text)),
+            "txt" => FormatTxt(track),
             "srt" => FormatSrt(track),
             "vtt" => FormatVtt(track),
             "sub" => FormatSub(track),
             _ => throw new ArgumentException($"Unsupported format '{format}'."),
         };
+    }
+
+    private static string FormatTxt(ClosedCaptionTrack track)
+    {
+        var output = new List<string>();
+
+        foreach (var caption in track.Captions)
+        {
+            var lines = Regex.Split(caption.Text.Replace("\r\n", "\n").Replace('\r', '\n'), "\n")
+                .Select(line => line.TrimEnd())
+                .ToList();
+
+            while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[0])) lines.RemoveAt(0);
+            while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1])) lines.RemoveAt(lines.Count - 1);
+
+            var previousBlank = false;
+            foreach (var line in lines)
+            {
+                var blank = string.IsNullOrWhiteSpace(line);
+                if (blank)
+                {
+                    if (!previousBlank && output.Count > 0 && !string.IsNullOrWhiteSpace(output[^1]))
+                        output.Add(string.Empty);
+                }
+                else
+                {
+                    output.Add(line);
+                }
+                previousBlank = blank;
+            }
+        }
+
+        while (output.Count > 0 && string.IsNullOrWhiteSpace(output[^1])) output.RemoveAt(output.Count - 1);
+        return string.Join(Environment.NewLine, output) + (output.Count > 0 ? Environment.NewLine : string.Empty);
     }
 
     private static string FormatSrt(ClosedCaptionTrack track)
