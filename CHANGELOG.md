@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## 2.02 - 28.08.2026
+
+- Fix CLI execution under `cmd.exe` so the shell waits for `ytsubs.exe` to finish before displaying the next prompt.
+- Build the executable with the Windows console subsystem so stdout, stderr, pipes, redirection, exit codes, and command sequencing behave synchronously.
+- Preserve GUI behavior without arguments by immediately detaching from the console; when Explorer creates a private console window for the process, hide it before the WinForms UI starts.
+- Do not hide an existing user console when GUI mode is launched from `cmd.exe` or PowerShell.
+- Normalize `.txt` subtitle output by removing leading/trailing blank lines from individual caption segments and collapsing repeated internal blank lines to a single paragraph separator.
+- Preserve explicit paragraph breaks inside caption text while eliminating the artificial blank gaps that occurred between ordinary subtitle segments.
+- Add an `upgrade.cmd` validation that runs the candidate through `cmd.exe` and verifies that `--version` completes before a following command is executed.
+
 ## 2.01 - 28.08.2026
 
 - Fix `.NET 10 SDK` detection in `upgrade.cmd` on Windows.
