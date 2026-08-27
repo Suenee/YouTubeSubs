@@ -91,7 +91,7 @@ echo === PE SUBSYSTEM VALIDATION ===
 powershell -NoProfile -Command "$g=[IO.File]::ReadAllBytes('%CD%\build\publish-gui\ytsubs.exe'); $c=[IO.File]::ReadAllBytes('%CD%\build\publish-cli\ytsubs-cli.exe'); function sub($b){$pe=[BitConverter]::ToInt32($b,0x3c); [BitConverter]::ToUInt16($b,$pe+92)}; if((sub $g)-ne 2){exit 1}; if((sub $c)-ne 3){exit 2}" || (echo ERROR: GUI/CLI PE subsystems are not separated correctly.& echo        Existing executables were left untouched.& exit /b 33)
 
 echo === CLI VALIDATION ===
-set "EXPECTED_OUTPUT=ytsubs-cli 2.06"
+set "EXPECTED_OUTPUT=ytsubs-cli 2.07"
 set "CLI_VERSION="
 for /f "delims=" %%V in ('"%CD%\build\publish-cli\ytsubs-cli.exe" --version') do set "CLI_VERSION=%%V"
 if /i not "!CLI_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: CLI candidate version mismatch.& echo Expected: !EXPECTED_OUTPUT!& echo Actual: !CLI_VERSION!& exit /b 27)
@@ -99,6 +99,13 @@ if /i not "!CLI_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: CLI candidate versio
 echo === INSTALL CANDIDATES ===
 copy /y "build\publish-gui\ytsubs.exe" "%CD%\ytsubs.exe" >nul || (echo ERROR: Unable to install ytsubs.exe.& exit /b 28)
 copy /y "build\publish-cli\ytsubs-cli.exe" "%CD%\ytsubs-cli.exe" >nul || (echo ERROR: Unable to install ytsubs-cli.exe.& exit /b 28)
+if not exist "%CD%\ytsubs.exe" (echo ERROR: ytsubs.exe is missing after installation.& exit /b 34)
+if not exist "%CD%\ytsubs-cli.exe" (echo ERROR: ytsubs-cli.exe is missing after installation.& exit /b 34)
+
+echo === INSTALLED CLI VALIDATION ===
+set "INSTALLED_CLI_VERSION="
+for /f "delims=" %%V in ('"%CD%\ytsubs-cli.exe" --version') do set "INSTALLED_CLI_VERSION=%%V"
+if /i not "!INSTALLED_CLI_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Installed ytsubs-cli.exe did not execute correctly.& echo Expected: !EXPECTED_OUTPUT!& echo Actual: !INSTALLED_CLI_VERSION!& exit /b 35)
 
 echo === PORTABLE PAIR TEST ===
 set "PORTABLE_DIR=%TEMP%\ytsubs_portable_%RANDOM%_%RANDOM%"
@@ -111,6 +118,7 @@ rmdir /s /q "!PORTABLE_DIR!" >nul 2>nul
 if /i not "!PORTABLE_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Portable CLI validation failed.& exit /b 31)
 
 echo Version validation: !CLI_VERSION!
+echo Installed validation: !INSTALLED_CLI_VERSION!
 echo GUI executable: ytsubs.exe - Windows GUI subsystem
 echo CLI executable: ytsubs-cli.exe - Windows console subsystem
 echo CLI without arguments: launches ytsubs.exe
