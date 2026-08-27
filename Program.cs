@@ -7,21 +7,21 @@ namespace YouTubeSubs;
 
 internal static class Program
 {
-    public const string Version = "2.01";
+    public const string Version = "2.02";
     private const int GuiPort = 45871;
 
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 0)
+            PrepareGuiConsole();
+
         var config = AppConfig.Load();
         AppLog.Initialize(config.Logging);
         AppLog.Write($"start version={Version} args={string.Join(' ', args)}");
 
         if (args.Length > 0)
-        {
-            BindConsole();
             return RunCliAsync(args).GetAwaiter().GetResult();
-        }
 
         ApplicationConfiguration.Initialize();
         return RunGui(config);
@@ -72,6 +72,8 @@ internal static class Program
     {
         try
         {
+            Console.OutputEncoding = Encoding.UTF8;
+
             if (args.Length == 1 && args[0] == "--version")
             {
                 Console.Out.WriteLine($"ytsubs {Version}");
@@ -154,24 +156,44 @@ internal static class Program
         }
     }
 
-    private static void BindConsole()
+    private static void PrepareGuiConsole()
     {
-        if (!OperatingSystem.IsWindows()) return;
-        try { NativeMethods.AttachConsole(NativeMethods.AttachParentProcess); } catch { }
+        if (!OperatingSystem.IsWindows())
+            return;
+
         try
         {
-            Console.OutputEncoding = Encoding.UTF8;
-            Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true });
-            Console.SetError(new StreamWriter(Console.OpenStandardError(), new UTF8Encoding(false)) { AutoFlush = true });
+            var processes = new uint[4];
+            var processCount = NativeMethods.GetConsoleProcessList(processes, (uint)processes.Length);
+            var consoleWindow = NativeMethods.GetConsoleWindow();
+
+            // Explorer creates a console owned only by this process for a console-subsystem EXE.
+            // Hide that console immediately. When launched from an existing cmd/PowerShell window,
+            // do not hide the user's console; simply detach this GUI process from it.
+            if (processCount == 1 && consoleWindow != IntPtr.Zero)
+                NativeMethods.ShowWindow(consoleWindow, NativeMethods.SwHide);
+
+            NativeMethods.FreeConsole();
         }
         catch { }
     }
 
     private static class NativeMethods
     {
-        public const uint AttachParentProcess = 0xFFFFFFFF;
+        public const int SwHide = 0;
+
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool AttachConsole(uint processId);
+        public static extern bool FreeConsole();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern uint GetConsoleProcessList([Out] uint[] processList, uint processCount);
+
+        [DllImport("kernel32.dll")]
+        public static extern IntPtr GetConsoleWindow();
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     }
 }
