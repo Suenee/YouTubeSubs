@@ -1,2 +1,4 @@
 -r requirements.txt
-pyinstaller>=6.10,<7
+nuitka>=2.8,<3
+ordered-set>=4.1
+zstandard>=0.23
