@@ -21,6 +21,8 @@ Development takes place on the `devel` branch. Stable releases are published to 
 
 ## Build / update
 
+The current Nuitka/MinGW64 build toolchain is intentionally pinned to 64-bit Python 3.12. Python 3.13 is not used for compilation because the supported Nuitka 2.8.x MinGW64 backend does not support that CPython layout. This is a development/build requirement only; the finished `ytsubs.exe` does not require Python on the target machine.
+
 Clone the repository and switch to the development branch:
 
 ```cmd
@@ -30,7 +32,7 @@ git switch devel
 upgrade.cmd
 ```
 
-`upgrade.cmd` self-checks first, updates the current branch, prepares a local `.venv`, installs build dependencies, validates Python sources, builds the one-file Windows executable with Nuitka, validates the candidate, installs it only after successful validation, and finally performs a portable smoke test outside the repository.
+`upgrade.cmd` self-checks first, updates the current branch, verifies that Python 3.12 is available through the Windows Python Launcher, automatically recreates the local `.venv` with Python 3.12 when necessary, installs build dependencies, validates Python sources, builds the one-file Windows executable with Nuitka, validates the candidate, installs it only after successful validation, and finally performs a portable smoke test outside the repository.
 
 The resulting application is created directly in the repository root:
 
