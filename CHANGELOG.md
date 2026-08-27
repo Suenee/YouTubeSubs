@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## 1.03 - 27.08.2026
+
+- Added the YouTubeSubs application icon assets for GUI windows, the Windows taskbar, and future executable builds.
+- Improved initial GUI activation so a normal launch is brought to the foreground.
+- Kept single-instance activation behavior and strengthened foreground activation.
+- Invalid or unavailable video-like input now fails quietly in the GUI and keeps Download disabled.
+- Removed the `Ready:` status prefix.
+- Added the valid video title as a centered clickable link that opens the canonical YouTube URL in the default browser.
+- Added tolerant video ID extraction from damaged or incomplete YouTube URLs and surrounding text.
+
 ## 1.02 - 27.08.2026
 
 - Centered the main GUI window on the desktop.
@@ -14,9 +24,6 @@ All notable changes to this project are documented here.
 - Added post-save Yes / No prompt asking whether the saved file should be opened.
 - Opening a saved file is delegated to the default Windows file association.
 - The application exits after the post-save choice.
-- Added a complete `MANUAL.md` user manual for GUI, CLI, installation, updates, configuration, logging, and troubleshooting limitations.
-- Hardened `upgrade.cmd` validation so the version returned by the root `ytsubs` launcher must exactly match the version declared in `pyproject.toml`.
-- Prepared 1.02 as the first stable release on `main`.
 
 ## 1.01 - 27.08.2026
 
