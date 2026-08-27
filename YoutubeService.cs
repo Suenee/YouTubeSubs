@@ -64,14 +64,21 @@ internal sealed class YoutubeService
             {
                 if (uri.AbsolutePath == "/watch")
                 {
-                    var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
-                    var candidate = query["v"] ?? string.Empty;
-                    if (VideoIdRegex.IsMatch(candidate)) return candidate;
+                    var query = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var item in query)
+                    {
+                        var pair = item.Split('=', 2);
+                        if (pair.Length == 2 && string.Equals(Uri.UnescapeDataString(pair[0]), "v", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var candidate = Uri.UnescapeDataString(pair[1]);
+                            if (VideoIdRegex.IsMatch(candidate)) return candidate;
+                        }
+                    }
                 }
                 else
                 {
                     var parts = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                    if (parts.Length >= 2 && parts[0] is "shorts" or "embed" or "live" && VideoIdRegex.IsMatch(parts[1]))
+                    if (parts.Length >= 2 && (parts[0] is "shorts" or "embed" or "live") && VideoIdRegex.IsMatch(parts[1]))
                         return parts[1];
                 }
             }
