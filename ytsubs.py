@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YouTubeSubs 1.11 core services."""
+"""YouTubeSubs 1.12 core services."""
 
 from __future__ import annotations
 
@@ -15,9 +15,8 @@ from urllib.parse import parse_qs, urlparse
 
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import SRTFormatter, TextFormatter
-from yt_dlp import YoutubeDL
 
-VERSION = "1.11"
+VERSION = "1.12"
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 VIDEO_ID_ANYWHERE_RE = re.compile(r"(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])")
 DEFAULT_STATS = {"metadata": 0.8, "transcripts": 1.0, "download": 0.8, "format": 0.1, "save": 0.1}
@@ -86,7 +85,6 @@ def extract_video_id(value: str) -> str:
     value = value.strip()
     if VIDEO_ID_RE.fullmatch(value):
         return value
-
     patterns = (
         r"(?:[?&]v=)([A-Za-z0-9_-]{11})",
         r"(?:youtu\.be/)([A-Za-z0-9_-]{11})",
@@ -96,11 +94,9 @@ def extract_video_id(value: str) -> str:
         match = re.search(pattern, value, flags=re.IGNORECASE)
         if match:
             return match.group(1)
-
     candidates = VIDEO_ID_ANYWHERE_RE.findall(value)
     if len(candidates) == 1:
         return candidates[0]
-
     try:
         parsed = urlparse(value)
     except ValueError as exc:
@@ -176,6 +172,9 @@ class Engine:
 
     def metadata(self, video_id: str) -> dict:
         self._phase("metadata")
+        # yt-dlp is intentionally imported only when metadata is actually requested.
+        # This keeps normal GUI/--version startup free from yt-dlp's large import tree.
+        from yt_dlp import YoutubeDL
         opts = {"quiet": True, "no_warnings": True, "skip_download": True}
         with YoutubeDL(opts) as ydl:
             data = ydl.extract_info(canonical_url(video_id), download=False) or {}
