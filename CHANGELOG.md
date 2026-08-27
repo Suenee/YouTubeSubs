@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## 2.05 - 28.08.2026
+
+- Restore the Windows GUI PE subsystem (`WinExe`) so launching `ytsubs.exe` normally does not create a console window, eliminating the terminal flash introduced in 2.02.
+- Remove the post-start console hiding/detaching workaround; the GUI process now starts without a console at the operating-system level.
+- In CLI mode, explicitly attach to the parent console when available and bind standard output/error streams for command-line use and redirected execution.
+- Replace the misleading interactive `cmd.exe` synchronization validation with a PE subsystem check plus redirected CLI process validation.
+- Validate the published executable header and reject candidates that are not Windows GUI-subsystem executables before installation.
+- Keep the existing single-file .NET 10 build, icon integration, TXT normalization, CLI arguments, exit codes, and portable smoke test.
+- Note the Windows shell limitation: an interactive `cmd.exe` does not natively wait for a GUI-subsystem executable launched directly by name; callers that require guaranteed process waiting must launch it through a waiting process API or batch/script context.
+
 ## 2.04 - 28.08.2026
 
 - Replace the fragile inline `cmd.exe /c` synchronization command with a temporary `.cmd` test script.
