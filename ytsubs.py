@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""YouTubeSubs 1.02 - small YouTube subtitle downloader (CLI + GUI)."""
+"""YouTubeSubs 1.03 - small YouTube subtitle downloader (CLI + GUI)."""
 
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ import socket
 import sys
 import threading
 import time
+import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -20,15 +22,26 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import SRTFormatter, TextFormatter
 from yt_dlp import YoutubeDL
 
-VERSION = "1.02"
+VERSION = "1.03"
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+VIDEO_ID_ANYWHERE_RE = re.compile(r"(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])")
 DEFAULT_STATS = {"metadata": 0.8, "transcripts": 1.0, "download": 0.8, "format": 0.1, "save": 0.1}
 EXIT_OK, EXIT_USAGE, EXIT_NO_SUBS, EXIT_API, EXIT_OUTPUT = 0, 2, 3, 4, 5
 GUI_PORT = 45871
+APP_ID = "Suenee.YouTubeSubs"
 
 
 class CancelledError(Exception):
     pass
+
+
+def project_dir() -> Path:
+    return Path(__file__).resolve().parent
+
+
+def asset_path(name: str) -> Path:
+    base = Path(getattr(sys, "_MEIPASS", project_dir()))
+    return base / "assets" / name
 
 
 def app_dir() -> Path:
@@ -72,9 +85,25 @@ def setup_logging(mode: str) -> None:
 
 
 def extract_video_id(value: str) -> str:
+    """Extract an 11-character YouTube ID, tolerating damaged URLs and surrounding text."""
     value = value.strip()
     if VIDEO_ID_RE.fullmatch(value):
         return value
+
+    patterns = (
+        r"(?:[?&]v=)([A-Za-z0-9_-]{11})",
+        r"(?:youtu\.be/)([A-Za-z0-9_-]{11})",
+        r"(?:youtube(?:-nocookie)?\.com/(?:shorts|embed|live)/)([A-Za-z0-9_-]{11})",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, value, flags=re.IGNORECASE)
+        if match:
+            return match.group(1)
+
+    candidates = VIDEO_ID_ANYWHERE_RE.findall(value)
+    if len(candidates) == 1:
+        return candidates[0]
+
     try:
         parsed = urlparse(value)
     except ValueError as exc:
@@ -258,9 +287,24 @@ def center_window(window) -> None:
     window.geometry(f"+{x}+{y}")
 
 
+def apply_window_icon(window) -> None:
+    icon = asset_path("ytsubs.ico")
+    if icon.exists():
+        try:
+            window.iconbitmap(default=str(icon))
+        except Exception:
+            logging.exception("Unable to set window icon")
+
+
 def gui() -> int:
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
+
+    if os.name == "nt":
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+        except Exception:
+            pass
 
     activation_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -278,11 +322,11 @@ def gui() -> int:
     root = tk.Tk()
     root.title(f"YouTubeSubs {VERSION}")
     root.resizable(False, False)
+    apply_window_icon(root)
 
     url_var = tk.StringVar()
     lang_var = tk.StringVar(value="Auto / Original")
     fmt_var = tk.StringVar(value="txt")
-    status_var = tk.StringVar(value="Enter a YouTube URL or video ID.")
     state = {"info": None, "timer": None, "lang_map": {}, "dialog": None, "closing": False}
 
     def bring_to_front() -> None:
@@ -292,8 +336,8 @@ def gui() -> int:
             root.deiconify()
             root.lift()
             root.attributes("-topmost", True)
-            root.after(150, lambda: root.attributes("-topmost", False))
             root.focus_force()
+            root.after(300, lambda: root.attributes("-topmost", False) if root.winfo_exists() else None)
             dialog = state.get("dialog")
             if dialog and dialog.winfo_exists():
                 dialog.lift()
@@ -327,7 +371,11 @@ def gui() -> int:
     fmt_frame.grid(row=3, column=1, sticky="e")
     ttk.Radiobutton(fmt_frame, text="TXT", variable=fmt_var, value="txt").grid(row=0, column=0)
     ttk.Radiobutton(fmt_frame, text="SRT", variable=fmt_var, value="srt").grid(row=0, column=1)
-    ttk.Label(frame, textvariable=status_var, wraplength=500).grid(row=4, column=0, columnspan=2, sticky="w", pady=(2, 6))
+
+    title_link = tk.Label(frame, text="", fg="#0563C1", cursor="hand2", font=("TkDefaultFont", 9, "underline"), wraplength=500, justify="center")
+    title_link.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(2, 8))
+    title_link.grid_remove()
+
     buttons = ttk.Frame(frame)
     buttons.grid(row=5, column=0, columnspan=2, sticky="e", pady=(8, 0))
 
@@ -340,7 +388,26 @@ def gui() -> int:
             activation_socket.close()
         except OSError:
             pass
-        root.destroy()
+        try:
+            root.destroy()
+        except tk.TclError:
+            pass
+
+    def clear_video_state() -> None:
+        state["info"] = None
+        state["lang_map"] = {}
+        lang_box["values"] = ["Auto / Original"]
+        lang_var.set("Auto / Original")
+        title_link.configure(text="")
+        title_link.grid_remove()
+        download_btn.state(["disabled"])
+
+    def open_video_link(_event=None) -> None:
+        info = state.get("info")
+        if info:
+            webbrowser.open(canonical_url(info.video_id))
+
+    title_link.bind("<Button-1>", open_video_link)
 
     class ProgressDialog:
         def __init__(self, title: str, phases: list[str], labels: dict[str, str], on_cancel):
@@ -356,6 +423,7 @@ def gui() -> int:
             self.window.title(title)
             self.window.resizable(False, False)
             self.window.transient(root)
+            apply_window_icon(self.window)
             self.window.protocol("WM_DELETE_WINDOW", close_app)
             body = ttk.Frame(self.window, padding=14)
             body.grid()
@@ -369,7 +437,9 @@ def gui() -> int:
             self.window.update_idletasks()
             center_window(self.window)
             self.window.grab_set()
+            self.window.attributes("-topmost", True)
             self.window.focus_force()
+            self.window.after(250, lambda: self.window.attributes("-topmost", False) if self.window.winfo_exists() else None)
             self.animate()
 
         def set_phase(self, name: str) -> None:
@@ -422,8 +492,7 @@ def gui() -> int:
             state["dialog"] = None
 
     def analysis_cancelled() -> None:
-        status_var.set("Analysis cancelled.")
-        download_btn.state(["disabled"])
+        clear_video_state()
 
     def analysis_done(info: VideoInfo, dialog: ProgressDialog) -> None:
         if dialog.cancel_event.is_set() or state["closing"]:
@@ -435,19 +504,17 @@ def gui() -> int:
         state["lang_map"] = dict(choices)
         lang_box["values"] = ["Auto / Original"] + [label for label, _ in choices]
         lang_var.set("Auto / Original")
-        status_var.set(f"Ready: {info.title}")
+        title_link.configure(text=info.title)
+        title_link.grid()
         download_btn.state(["!disabled"])
-        root.lift()
+        bring_to_front()
 
-    def analysis_failed(error: str, dialog: ProgressDialog) -> None:
+    def analysis_failed(dialog: ProgressDialog) -> None:
         if dialog.cancel_event.is_set() or state["closing"]:
             return
         dialog.close()
-        state["info"] = None
-        lang_box["values"] = ["Auto / Original"]
-        download_btn.state(["disabled"])
-        status_var.set(error)
-        messagebox.showerror("YouTubeSubs", error, parent=root)
+        clear_video_state()
+        bring_to_front()
 
     def analyze_now() -> None:
         value = url_var.get().strip()
@@ -456,9 +523,9 @@ def gui() -> int:
         try:
             extract_video_id(value)
         except ValueError:
+            clear_video_state()
             return
-        state["info"] = None
-        download_btn.state(["disabled"])
+        clear_video_state()
         labels = {"metadata": "Reading video information...", "transcripts": "Finding available subtitles..."}
         dialog = ProgressDialog("Analyzing video", ["metadata", "transcripts"], labels, analysis_cancelled)
 
@@ -468,20 +535,19 @@ def gui() -> int:
                 root.after(0, lambda: analysis_done(info, dialog))
             except CancelledError:
                 pass
-            except Exception as exc:
-                error = str(exc)
-                root.after(0, lambda: analysis_failed(error, dialog))
+            except Exception:
+                logging.exception("Video analysis failed")
+                root.after(0, lambda: analysis_failed(dialog))
 
         threading.Thread(target=worker, daemon=True).start()
 
     def schedule_analysis(*_) -> None:
         if state["timer"]:
             root.after_cancel(state["timer"])
-        download_btn.state(["disabled"])
+        clear_video_state()
         state["timer"] = root.after(500, analyze_now)
 
     def download_cancelled() -> None:
-        status_var.set("Download cancelled.")
         download_btn.state(["!disabled"])
 
     def download() -> None:
@@ -492,12 +558,7 @@ def gui() -> int:
         selected_label = lang_var.get()
         selected_lang = None if selected_label == "Auto / Original" else state["lang_map"].get(selected_label)
         proposed = clean_filename(info.title) + "." + fmt
-        path = filedialog.asksaveasfilename(
-            parent=root,
-            initialfile=proposed,
-            defaultextension="." + fmt,
-            filetypes=[(fmt.upper(), "*." + fmt), ("All files", "*.*")],
-        )
+        path = filedialog.asksaveasfilename(parent=root, initialfile=proposed, defaultextension="." + fmt, filetypes=[(fmt.upper(), "*." + fmt), ("All files", "*.*")])
         if not path:
             return
         labels = {"download": "Downloading subtitles...", "format": "Creating output...", "save": "Saving file..."}
@@ -509,7 +570,6 @@ def gui() -> int:
                 return
             dialog.finish_stats()
             dialog.close()
-            status_var.set(f"Saved: {path}")
             open_file = messagebox.askyesno("YouTubeSubs", "Subtitles saved successfully.\n\nOpen the file?", parent=root)
             if open_file:
                 try:
@@ -523,7 +583,6 @@ def gui() -> int:
                 return
             dialog.close()
             download_btn.state(["!disabled"])
-            status_var.set(error)
             messagebox.showerror("YouTubeSubs", error, parent=root)
 
         def worker() -> None:
@@ -543,6 +602,7 @@ def gui() -> int:
             except CancelledError:
                 pass
             except Exception as exc:
+                logging.exception("Subtitle download failed")
                 error = str(exc)
                 root.after(0, lambda: failed(error))
 
@@ -552,11 +612,14 @@ def gui() -> int:
     download_btn.grid(row=0, column=0, padx=(0, 8))
     download_btn.state(["disabled"])
     ttk.Button(buttons, text="Cancel", command=close_app).grid(row=0, column=1)
+
     root.protocol("WM_DELETE_WINDOW", close_app)
     url_var.trace_add("write", schedule_analysis)
-    url_entry.focus_set()
     root.update_idletasks()
     center_window(root)
+    url_entry.focus_set()
+    root.after(50, bring_to_front)
+    root.after(400, lambda: root.lift() if root.winfo_exists() else None)
     root.mainloop()
     return EXIT_OK
 
