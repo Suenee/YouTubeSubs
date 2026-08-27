@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## 1.09 - 27.08.2026
+
+- Removed the PNG-to-ICO conversion workflow from `upgrade.cmd`.
+- Removed Pillow from the build toolchain.
+- Store the validated Windows icon as text-safe `assets/ytsubs.ico.b64`; `upgrade.cmd` only decodes it and validates the ICO container structure before PyInstaller starts.
+- Removed the obsolete PNG icon asset from the repository.
+- PyInstaller now receives the final Windows ICO directly instead of converting image formats during the build.
+- Changed the executable to a console-enabled hybrid build with PyInstaller `hide_console="hide-early"`: GUI launch hides its own console while CLI launch from an existing console keeps normal stdout/stderr behavior.
+- Refresh the Windows shell icon cache notification after a successful build.
+- Keep `upgrade.cmd` starting with `cls`.
+
 ## 1.08 - 27.08.2026
 
 - Replaced the corrupted icon source with a verified 256 × 256 RGBA PNG derived directly from the original YouTubeSubs artwork.
