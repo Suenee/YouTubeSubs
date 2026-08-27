@@ -30,7 +30,7 @@ git switch devel
 upgrade.cmd
 ```
 
-`upgrade.cmd` self-checks first, updates the current branch, prepares a local `.venv`, installs build dependencies, validates Python sources, builds the one-file Windows executable with PyInstaller, and validates the generated executable version.
+`upgrade.cmd` self-checks first, updates the current branch, prepares a local `.venv`, installs build dependencies, validates Python sources, builds the one-file Windows executable with Nuitka, validates the candidate, installs it only after successful validation, and finally performs a portable smoke test outside the repository.
 
 The resulting application is created directly in the repository root:
 
@@ -38,7 +38,7 @@ The resulting application is created directly in the repository root:
 ytsubs.exe
 ```
 
-No global `PATH` changes are required and `ytsubs.cmd` is no longer used.
+No global `PATH` changes are required and `ytsubs.cmd` is no longer used. The distributed application is the single `ytsubs.exe`; Python sources, CMD files, PowerShell files, and `.venv` are development infrastructure only.
 
 ## GUI
 
@@ -52,7 +52,7 @@ Enter a YouTube URL or video ID. The application analyzes the video, lists subti
 
 The default language choice is `Auto`. The format selector is on the same row and offers `.srt`, `.sub`, `.txt`, and `.vtt`. The last selected format is remembered.
 
-Analysis and download use modal progress dialogs centered relative to the main window. Cancel stops the workflow. After a successful save, YouTubeSubs asks whether the file should be opened using the standard Windows file association.
+Analysis and download use modal progress dialogs. The native Save As dialog is positioned on the work area of the monitor containing the application. Cancel stops the workflow. After a successful save, YouTubeSubs asks whether the file should be opened using the standard Windows file association.
 
 ## CLI
 
@@ -90,10 +90,14 @@ Automatic translation is never used.
 
 ## Original-language heuristic
 
-1. If `yt-dlp` reports a language matching a real subtitle track, that language is preferred.
-2. Otherwise the first auto-generated transcript language is preferred because it normally reflects spoken audio.
-3. If no generated transcript exists, the first manual track returned by YouTube is used.
-4. Within a selected language, manual subtitles are preferred over auto-generated subtitles.
+YouTubeSubs intentionally avoids `yt-dlp` in the runtime bundle to keep the standalone application and Nuitka compilation lightweight.
+
+1. If an auto-generated transcript exists, its language is treated as the most likely spoken/original language.
+2. If no generated transcript exists, the first manual track returned by YouTube is used.
+3. Within the selected language, manual subtitles are preferred over auto-generated subtitles.
+4. `--lang` overrides the automatic choice with any real subtitle language exposed by YouTube.
+
+The video title is obtained from YouTube's lightweight oEmbed endpoint. Failure to obtain metadata does not prevent subtitle discovery; the video ID is used as the fallback title.
 
 ## Exit codes
 
