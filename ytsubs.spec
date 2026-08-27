@@ -1,21 +1,27 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all
-
-yt_dlp_datas, yt_dlp_binaries, yt_dlp_hidden = collect_all("yt_dlp")
-yta_datas, yta_binaries, yta_hidden = collect_all("youtube_transcript_api")
+# Keep this spec intentionally minimal. PyInstaller's normal analysis and
+# package hooks collect the imports required by ytsubs_app.py. Avoid
+# collect_all(), which pulls every yt-dlp/youtube-transcript-api submodule,
+# data file, and binary into the one-file archive.
 
 a = Analysis(
     ["ytsubs_app.py"],
     pathex=[],
-    binaries=yt_dlp_binaries + yta_binaries,
-    datas=[("assets/ytsubs.ico", "assets")] + yt_dlp_datas + yta_datas,
-    hiddenimports=yt_dlp_hidden + yta_hidden,
+    binaries=[],
+    datas=[("assets/ytsubs.ico", "assets")],
+    hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        "pytest",
+        "unittest",
+        "pydoc",
+        "doctest",
+        "tkinter.test",
+    ],
     noarchive=False,
-    optimize=0,
+    optimize=1,
 )
 pyz = PYZ(a.pure)
 
@@ -29,7 +35,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
     icon=["assets/ytsubs.ico"],
 )
