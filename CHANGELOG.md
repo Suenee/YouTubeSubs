@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## 2.07 - 28.08.2026
+
+- Harden installation of the separated GUI/CLI executable pair introduced in 2.06.
+- Require both `ytsubs.exe` and `ytsubs-cli.exe` to exist in the repository root after installation before the upgrade may succeed.
+- Execute the installed `ytsubs-cli.exe --version` after copying it into place and require the exact expected output before continuing.
+- Fail the upgrade explicitly if either installed executable is missing or the installed CLI does not run correctly.
+- Bump both GUI and CLI assemblies to version 2.07 while keeping the clean Windows GUI / Windows console subsystem split unchanged.
+
 ## 2.06 - 28.08.2026
 
 - End the experimental single-EXE GUI/CLI subsystem work from 2.02 through 2.05 and separate the two Windows execution models cleanly.
