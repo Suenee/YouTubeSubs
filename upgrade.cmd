@@ -73,17 +73,23 @@ echo === ICON VALIDATION ===
 if not exist "assets\ytsubs.ico.b64" (echo ERROR: Missing encoded Windows icon asset.& exit /b 20)
 powershell -NoProfile -Command "$raw=[Convert]::FromBase64String((Get-Content -Raw 'assets\ytsubs.ico.b64')); if($raw.Length -lt 22 -or $raw[0] -ne 0 -or $raw[1] -ne 0 -or $raw[2] -ne 1 -or $raw[3] -ne 0){exit 1}; [IO.File]::WriteAllBytes('assets\ytsubs.ico',$raw)" || (echo ERROR: Encoded Windows ICO asset is invalid.& exit /b 21)
 
+echo === CLEAN BUILD STATE ===
+if exist "obj" rmdir /s /q "obj"
+if exist "bin" rmdir /s /q "bin"
+if exist "cli\obj" rmdir /s /q "cli\obj"
+if exist "cli\bin" rmdir /s /q "cli\bin"
+
 echo === SOURCE VALIDATION ===
 "!DOTNET_EXE!" restore YouTubeSubs.csproj || (echo ERROR: GUI restore failed.& exit /b 22)
-"!DOTNET_EXE!" restore YouTubeSubs.Cli.csproj || (echo ERROR: CLI restore failed.& exit /b 22)
+"!DOTNET_EXE!" restore cli\YouTubeSubs.Cli.csproj || (echo ERROR: CLI restore failed.& exit /b 22)
 "!DOTNET_EXE!" build YouTubeSubs.csproj -c Release --no-restore || (echo ERROR: GUI build failed.& exit /b 23)
-"!DOTNET_EXE!" build YouTubeSubs.Cli.csproj -c Release --no-restore || (echo ERROR: CLI build failed.& exit /b 23)
+"!DOTNET_EXE!" build cli\YouTubeSubs.Cli.csproj -c Release --no-restore || (echo ERROR: CLI build failed.& exit /b 23)
 
 echo === PUBLISH GUI AND CLI ===
 if exist "build\publish-gui" rmdir /s /q "build\publish-gui"
 if exist "build\publish-cli" rmdir /s /q "build\publish-cli"
 "!DOTNET_EXE!" publish YouTubeSubs.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:PublishTrimmed=false -o "build\publish-gui" || (echo ERROR: GUI publish failed. Existing executables were left untouched.& exit /b 24)
-"!DOTNET_EXE!" publish YouTubeSubs.Cli.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:PublishTrimmed=false -o "build\publish-cli" || (echo ERROR: CLI publish failed. Existing executables were left untouched.& exit /b 24)
+"!DOTNET_EXE!" publish cli\YouTubeSubs.Cli.csproj -c Release -r win-x64 --self-contained true --no-restore -p:PublishSingleFile=true -p:PublishTrimmed=false -o "build\publish-cli" || (echo ERROR: CLI publish failed. Existing executables were left untouched.& exit /b 24)
 if not exist "build\publish-gui\ytsubs.exe" (echo ERROR: GUI candidate is missing.& exit /b 25)
 if not exist "build\publish-cli\ytsubs-cli.exe" (echo ERROR: CLI candidate is missing.& exit /b 25)
 
@@ -91,7 +97,7 @@ echo === PE SUBSYSTEM VALIDATION ===
 powershell -NoProfile -Command "$g=[IO.File]::ReadAllBytes('%CD%\build\publish-gui\ytsubs.exe'); $c=[IO.File]::ReadAllBytes('%CD%\build\publish-cli\ytsubs-cli.exe'); function sub($b){$pe=[BitConverter]::ToInt32($b,0x3c); [BitConverter]::ToUInt16($b,$pe+92)}; $gs=sub $g; $cs=sub $c; Write-Host ('GUI subsystem: '+$gs); Write-Host ('CLI subsystem: '+$cs); if($gs-ne 2){exit 1}; if($cs-ne 3){exit 2}" || (echo ERROR: GUI/CLI PE subsystems are not separated correctly.& echo        Existing executables were left untouched.& exit /b 33)
 
 echo === CLI VALIDATION ===
-set "EXPECTED_OUTPUT=ytsubs-cli 2.08"
+set "EXPECTED_OUTPUT=ytsubs-cli 2.09"
 set "CLI_VERSION="
 for /f "delims=" %%V in ('"%CD%\build\publish-cli\ytsubs-cli.exe" --version') do set "CLI_VERSION=%%V"
 if /i not "!CLI_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: CLI candidate version mismatch.& echo Expected: !EXPECTED_OUTPUT!& echo Actual: !CLI_VERSION!& exit /b 27)
