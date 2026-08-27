@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## 1.07 - 27.08.2026
+
+- Corrected the icon assets: `assets/ytsubs.png` is now the canonical, real PNG source image.
+- Removed the incorrectly tracked `assets/ytsubs.ico`; the ICO is now generated locally during `upgrade.cmd` and ignored by Git.
+- Restored the complete `ytsubs.py` core after detecting an accidental partial overwrite during version maintenance.
+- `upgrade.cmd` now starts with `cls`.
+- Strengthened icon validation to verify the actual PNG format and minimum source dimensions before generating the Windows ICO.
+- Kept Pillow as a build-only dependency and generate the 16, 24, 32, 48, 64, 128, and 256 pixel ICO variants before PyInstaller starts.
+
 ## 1.06 - 27.08.2026
 
 - Added Pillow to the standalone build toolchain.
@@ -39,7 +48,7 @@ All notable changes to this project are documented here.
 - Kept single-instance activation behavior and strengthened foreground activation.
 - Invalid or unavailable video-like input now fails quietly in the GUI and keeps Download disabled.
 - Removed the `Ready:` status prefix.
-- Added the valid video title as a centered clickable link that opens the canonical YouTube watch URL in the default browser.
+- Added the valid video title as a centered clickable link that opens the canonical YouTube URL in the default browser.
 - Added tolerant video ID extraction from damaged or incomplete YouTube URLs and surrounding text.
 
 ## 1.02 - 27.08.2026
