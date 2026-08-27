@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## 2.04 - 28.08.2026
+
+- Replace the fragile inline `cmd.exe /c` synchronization command with a temporary `.cmd` test script.
+- Run `ytsubs.exe --version` and the following marker command as two ordinary batch lines, eliminating nested command-line quoting and escaping ambiguity.
+- Verify the candidate exit code and compare the captured output byte-for-byte with the required `ytsubs 2.04` / `__AFTER__` sequence.
+- Treat any execution failure or output mismatch as a hard validation failure and keep the previously installed executable untouched.
+- Keep the verified synchronous CLI implementation and TXT normalization behavior from 2.02 unchanged.
+
 ## 2.03 - 28.08.2026
 
 - Fix the `upgrade.cmd` CLI synchronization validation introduced in 2.02.
