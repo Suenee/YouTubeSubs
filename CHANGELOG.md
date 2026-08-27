@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## 2.10 - 28.08.2026
+
+- Fix the GUI build after moving the dedicated CLI sources into `cli/` in 2.09.
+- Explicitly exclude `cli\**\*.cs` from the root WinForms project's default compile glob so `Program.cs` remains the GUI project's only entry point.
+- Keep the CLI project physically isolated in `cli/` with its own intermediate build directories and shared application logic linked from the root.
+- Preserve the strict publish validation requiring GUI subsystem 2 and CLI subsystem 3 before installation.
+- Bump both executables and upgrade validation to version 2.10.
+
 ## 2.09 - 28.08.2026
 
 - Correct the 2.08 diagnosis: .NET 6 and later respect explicit `OutputType=Exe`; `DisableWinExeOutputInference` is obsolete for this case.
