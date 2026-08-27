@@ -2,10 +2,20 @@
 
 All notable changes to this project are documented here.
 
+## 2.09 - 28.08.2026
+
+- Correct the 2.08 diagnosis: .NET 6 and later respect explicit `OutputType=Exe`; `DisableWinExeOutputInference` is obsolete for this case.
+- Identify the actual build risk: the GUI and CLI project files lived in the same directory and therefore shared default `obj`/`bin` intermediate directories, allowing the GUI apphost state to contaminate the CLI build.
+- Move the CLI project and entry point into the dedicated `cli/` directory so GUI and CLI use physically separate build intermediates and apphosts.
+- Keep shared application logic linked from the root sources without duplicating subtitle retrieval or configuration code.
+- Remove the obsolete root-level CLI project and entry point.
+- Make `upgrade.cmd` delete both GUI and CLI intermediate build directories before restore/build, then build the isolated CLI project from `cli\YouTubeSubs.Cli.csproj`.
+- Keep the hard PE validation: `ytsubs.exe` must report subsystem 2 and `ytsubs-cli.exe` must report subsystem 3 before either candidate is installed.
+- Bump both executables to version 2.09.
+
 ## 2.08 - 28.08.2026
 
-- Fix the dedicated CLI project so .NET SDK output inference cannot silently convert it back to the Windows GUI subsystem.
-- Set `DisableWinExeOutputInference=true` in `YouTubeSubs.Cli.csproj` while keeping `OutputType=Exe`, forcing `ytsubs-cli.exe` to remain a true Windows console-subsystem executable.
+- Attempted to prevent SDK output inference with `DisableWinExeOutputInference=true`; runtime testing showed this did not fix the CLI subsystem because output inference was not the actual cause.
 - Keep `ytsubs.exe` as a Windows GUI-subsystem executable and preserve the separate GUI/CLI architecture introduced in 2.06.
 - Improve `upgrade.cmd` PE diagnostics so it prints the detected GUI and CLI subsystem numbers before accepting or rejecting the candidates.
 - Keep installation blocked unless the GUI reports subsystem 2 and the CLI reports subsystem 3.
