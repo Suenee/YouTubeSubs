@@ -5,6 +5,7 @@ __pycache__/
 venv/
 build/
 dist/
+ytsubs.exe
 .pytest_cache/
 .idea/
 .vscode/
