@@ -19,6 +19,6 @@ All notable changes to this project are documented here.
 
 ## Python history
 
-The complete verified Python implementation and its historical changelog through version 1.13 are preserved in branch `ALFA`.
+The complete verified Python implementation and its historical changelog through version 1.13 are preserved in branch `ALFA` at commit `0b7271a717e3c308c9dd2bbaf2a75fdc0a532cd7`.
 
 Versions 1.14 through 1.16 were experimental build-system attempts on `devel` and are intentionally not carried forward into the .NET implementation.
