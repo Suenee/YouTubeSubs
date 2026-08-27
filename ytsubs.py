@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""YouTubeSubs 1.13 core services."""
+"""YouTubeSubs 1.14 core services."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api.formatters import SRTFormatter, TextFormatter
 
-VERSION = "1.13"
+VERSION = "1.14"
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 VIDEO_ID_ANYWHERE_RE = re.compile(r"(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{11})(?![A-Za-z0-9_-])")
 DEFAULT_STATS = {"metadata": 0.8, "transcripts": 1.0, "download": 0.8, "format": 0.1, "save": 0.1}
