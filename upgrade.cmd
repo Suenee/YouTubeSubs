@@ -47,20 +47,43 @@ if /i "!LOCAL_SHA!"=="!REMOTE_SHA!" (
 
 echo === .NET 10 SDK CHECK ===
 set "DOTNET_EXE="
-where dotnet >nul 2>nul && set "DOTNET_EXE=dotnet"
+for /f "delims=" %%D in ('where dotnet 2^>nul') do if not defined DOTNET_EXE set "DOTNET_EXE=%%D"
 if not defined DOTNET_EXE if exist "%ProgramFiles%\dotnet\dotnet.exe" set "DOTNET_EXE=%ProgramFiles%\dotnet\dotnet.exe"
+set "SDK_LIST_FILE=%TEMP%\ytsubs_dotnet_sdks_%RANDOM%.txt"
 set "HAS_DOTNET10="
-if defined DOTNET_EXE for /f "delims=" %%D in ('"!DOTNET_EXE!" --list-sdks 2^>nul ^| findstr /b "10\."') do set "HAS_DOTNET10=1"
+if defined DOTNET_EXE (
+  "!DOTNET_EXE!" --list-sdks > "!SDK_LIST_FILE!" 2>nul
+  findstr /b /c:"10." "!SDK_LIST_FILE!" >nul 2>nul && set "HAS_DOTNET10=1"
+)
+del "!SDK_LIST_FILE!" >nul 2>nul
 if not defined HAS_DOTNET10 (
-  echo .NET 10 SDK is not installed. upgrade.cmd will install the current Microsoft .NET 10 SDK.
-  where winget >nul 2>nul || (echo ERROR: .NET 10 SDK is missing and winget is unavailable.& echo        Install the current .NET 10 SDK and run upgrade.cmd again.& exit /b 17)
-  winget install --id Microsoft.DotNet.SDK.10 --exact --silent --accept-package-agreements --accept-source-agreements || (echo ERROR: Automatic .NET 10 SDK installation failed.& exit /b 18)
-  if exist "%ProgramFiles%\dotnet\dotnet.exe" set "DOTNET_EXE=%ProgramFiles%\dotnet\dotnet.exe"
+  if defined DOTNET_EXE echo .NET host was found, but no .NET 10 SDK was detected.
+  if not defined DOTNET_EXE echo .NET SDK host was not found.
+  echo upgrade.cmd will install the current Microsoft .NET 10 SDK.
+  where winget >nul 2>nul || (echo ERROR: .NET 10 SDK is unavailable and winget is unavailable.& echo        Install the current .NET 10 SDK and run upgrade.cmd again.& exit /b 17)
+  winget install --id Microsoft.DotNet.SDK.10 --exact --silent --accept-package-agreements --accept-source-agreements
+  if errorlevel 1 (
+    echo ERROR: Automatic .NET 10 SDK installation failed.
+    echo        If .NET 10 is already installed, run "%ProgramFiles%\dotnet\dotnet.exe" --list-sdks to verify the installation.
+    exit /b 18
+  )
+  set "DOTNET_EXE="
+  for /f "delims=" %%D in ('where dotnet 2^>nul') do if not defined DOTNET_EXE set "DOTNET_EXE=%%D"
+  if not defined DOTNET_EXE if exist "%ProgramFiles%\dotnet\dotnet.exe" set "DOTNET_EXE=%ProgramFiles%\dotnet\dotnet.exe"
+  if not defined DOTNET_EXE (echo ERROR: .NET 10 SDK installation completed but dotnet.exe is still unavailable.& exit /b 19)
+  set "SDK_LIST_FILE=%TEMP%\ytsubs_dotnet_sdks_%RANDOM%.txt"
+  "!DOTNET_EXE!" --list-sdks > "!SDK_LIST_FILE!" 2>nul
   set "HAS_DOTNET10="
-  for /f "delims=" %%D in ('"!DOTNET_EXE!" --list-sdks 2^>nul ^| findstr /b "10\."') do set "HAS_DOTNET10=1"
+  findstr /b /c:"10." "!SDK_LIST_FILE!" >nul 2>nul && set "HAS_DOTNET10=1"
+  del "!SDK_LIST_FILE!" >nul 2>nul
   if not defined HAS_DOTNET10 (echo ERROR: .NET 10 SDK installation completed but SDK 10.x is still unavailable.& exit /b 19)
 )
-for /f "delims=" %%D in ('"!DOTNET_EXE!" --version') do set "DOTNET_VERSION=%%D"
+set "DOTNET_VERSION_FILE=%TEMP%\ytsubs_dotnet_version_%RANDOM%.txt"
+"!DOTNET_EXE!" --version > "!DOTNET_VERSION_FILE!" 2>nul
+set "DOTNET_VERSION="
+set /p DOTNET_VERSION=<"!DOTNET_VERSION_FILE!"
+del "!DOTNET_VERSION_FILE!" >nul 2>nul
+if not defined DOTNET_VERSION (echo ERROR: Unable to read the active .NET SDK version.& exit /b 19)
 echo Build SDK: .NET !DOTNET_VERSION!
 
 echo === LEGACY PYTHON BUILD CLEANUP ===
@@ -82,7 +105,7 @@ if exist "build\publish" rmdir /s /q "build\publish"
 if not exist "build\publish\ytsubs.exe" (echo ERROR: Publish did not create build\publish\ytsubs.exe.& exit /b 25)
 
 echo === CANDIDATE VALIDATION ===
-set "EXPECTED_OUTPUT=ytsubs 2.00"
+set "EXPECTED_OUTPUT=ytsubs 2.01"
 set "CANDIDATE_VERSION="
 for /f "delims=" %%V in ('powershell -NoProfile -Command "$p=New-Object Diagnostics.Process; $p.StartInfo.FileName='%CD%\build\publish\ytsubs.exe'; $p.StartInfo.Arguments='--version'; $p.StartInfo.UseShellExecute=$false; $p.StartInfo.RedirectStandardOutput=$true; $p.StartInfo.RedirectStandardError=$true; $p.StartInfo.CreateNoWindow=$true; [void]$p.Start(); $o=$p.StandardOutput.ReadToEnd().Trim(); $p.WaitForExit(); if($p.ExitCode -eq 0){$o}"') do set "CANDIDATE_VERSION=%%V"
 if not defined CANDIDATE_VERSION (echo ERROR: .NET candidate CLI validation failed. Existing ytsubs.exe was left untouched.& exit /b 26)
