@@ -53,11 +53,11 @@ if not exist ".venv\Scripts\python.exe" (py -3 -m venv .venv 2>nul || python -m 
 
 echo === SOURCE VALIDATION ===
 ".venv\Scripts\python.exe" -m py_compile ytsubs.py ytsubs_app.py || (echo ERROR: Python syntax validation failed.& exit /b 21)
-if not exist "assets\ytsubs.png" (echo ERROR: Missing application icon source: assets\ytsubs.png& exit /b 22)
+if not exist "assets\ytsubs.ico.b64" (echo ERROR: Missing encoded Windows icon asset: assets\ytsubs.ico.b64& exit /b 22)
 if not exist "ytsubs.spec" (echo ERROR: Missing PyInstaller spec: ytsubs.spec& exit /b 23)
 
 echo === ICON VALIDATION ===
-".venv\Scripts\python.exe" -c "from PIL import Image; from pathlib import Path; p=Path(r'assets\ytsubs.png'); a=Image.open(p); assert a.format=='PNG', f'Expected PNG, got {a.format}'; a.verify(); b=Image.open(p); b.load(); assert b.format=='PNG'; assert b.width>=256 and b.height>=256, f'Icon source too small: {b.size}'; b.convert('RGBA').save(r'assets\ytsubs.ico', format='ICO', sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)]); c=Image.open(r'assets\ytsubs.ico'); assert c.format=='ICO', f'Expected ICO, got {c.format}'; c.verify(); d=Image.open(r'assets\ytsubs.ico'); d.load(); assert d.format=='ICO'" || (echo ERROR: Unable to fully decode icon source or create/validate Windows ICO.& exit /b 24)
+".venv\Scripts\python.exe" -c "import base64,struct; from pathlib import Path; s=Path(r'assets\ytsubs.ico.b64'); raw=base64.b64decode(s.read_text(encoding='ascii'),validate=True); r,t,n=struct.unpack_from('<HHH',raw,0); assert r==0 and t==1 and n>=1; head=6+16*n; assert len(raw)>=head; e=[struct.unpack_from('<BBBBHHII',raw,6+16*i) for i in range(n)]; assert all(x[6]>0 and x[7]>=head and x[7]+x[6]<=len(raw) for x in e); Path(r'assets\ytsubs.ico').write_bytes(raw)" || (echo ERROR: Encoded Windows ICO asset is invalid.& exit /b 24)
 
 echo === STANDALONE BUILD ===
 if exist "ytsubs.exe" del /q "ytsubs.exe" || exit /b 25
@@ -73,9 +73,13 @@ for /f "delims=" %%V in ('"%CD%\ytsubs.exe" --version 2^>nul') do set "ACTUAL_VE
 if not defined ACTUAL_VERSION (echo ERROR: Standalone ytsubs.exe CLI validation failed.& exit /b 29)
 set "EXPECTED_OUTPUT=ytsubs !EXPECTED_VERSION!"
 if /i not "!ACTUAL_VERSION!"=="!EXPECTED_OUTPUT!" (echo ERROR: Version mismatch.& echo        Expected: !EXPECTED_OUTPUT!& echo        Actual:   !ACTUAL_VERSION!& exit /b 30)
+
+".venv\Scripts\python.exe" -c "import ctypes; ctypes.windll.shell32.SHChangeNotify(0x08000000,0,None,None)" >nul 2>nul
+
 echo Version validation: !ACTUAL_VERSION!
 echo Executable validation: ytsubs.exe
-echo Icon validation: full PNG decode -^> generated multi-size ICO -^> full ICO decode -^> embedded EXE icon
+echo Icon validation: encoded ICO -^> structural validation -^> embedded EXE icon
+echo Console mode: console-enabled EXE with automatic hide on GUI launch
 echo Format validation: .srt .sub .txt .vtt
 echo.
 echo YouTubeSubs update completed successfully on branch %BRANCH%.
