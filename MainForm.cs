@@ -107,12 +107,12 @@ internal sealed class MainForm : Form
         _status.Links.Clear();
     }
 
-    private async Task AnalyzeAsync()
+    private Task AnalyzeAsync()
     {
         var value = _input.Text.Trim();
-        if (_busy || string.IsNullOrWhiteSpace(value)) return;
+        if (_busy || string.IsNullOrWhiteSpace(value)) return Task.CompletedTask;
         try { _ = YoutubeService.ExtractVideoId(value); }
-        catch { ClearState(true); return; }
+        catch { ClearState(true); return Task.CompletedTask; }
 
         _busy = true;
         ClearState(false);
@@ -120,20 +120,19 @@ internal sealed class MainForm : Form
         VideoInfo? result = null;
         Exception? error = null;
 
-        var work = Task.Run(async () =>
+        dialog.Shown += async (_, _) =>
         {
             try { result = await _service.AnalyzeAsync(value, dialog.SetPhase, dialog.Cancellation.Token); }
             catch (OperationCanceledException) { }
             catch (Exception ex) { error = ex; }
             finally { dialog.Finish(error is null && !dialog.Cancellation.IsCancellationRequested); }
-        });
+        };
 
         dialog.ShowDialog(this);
-        await work;
         _busy = false;
-        if (dialog.ExitApplication) { Application.Exit(); return; }
-        if (dialog.Cancellation.IsCancellationRequested) { ClearState(false); return; }
-        if (error is not null || result is null) { ClearState(true); ActivateFront(); return; }
+        if (dialog.ExitApplication) { Application.Exit(); return Task.CompletedTask; }
+        if (dialog.Cancellation.IsCancellationRequested) { ClearState(false); return Task.CompletedTask; }
+        if (error is not null || result is null) { ClearState(true); ActivateFront(); return Task.CompletedTask; }
 
         _info = result;
         var choices = result.LanguageChoices();
@@ -151,11 +150,12 @@ internal sealed class MainForm : Form
         _status.Links.Add(0, result.Title.Length);
         _download.Enabled = true;
         ActivateFront();
+        return Task.CompletedTask;
     }
 
-    private async Task DownloadAsync()
+    private Task DownloadAsync()
     {
-        if (_info is null || _busy) return;
+        if (_info is null || _busy) return Task.CompletedTask;
         var ext = (_format.SelectedItem?.ToString() ?? ".srt").TrimStart('.').ToLowerInvariant();
         _config.LastFormat = ext;
         _config.Save();
@@ -172,14 +172,14 @@ internal sealed class MainForm : Form
             OverwritePrompt = true,
         };
         if (DialogPositioning.ShowSaveDialogCenteredOnScreen(save, this) != DialogResult.OK)
-            return;
+            return Task.CompletedTask;
 
         _busy = true;
         _download.Enabled = false;
         using var dialog = new ProgressDialog(this, "Downloading subtitles", new[] { "download", "format", "save" }, _config);
         Exception? error = null;
 
-        var work = Task.Run(async () =>
+        dialog.Shown += async (_, _) =>
         {
             try
             {
@@ -194,18 +194,17 @@ internal sealed class MainForm : Form
             }
             catch (Exception ex) { error = ex; }
             finally { dialog.Finish(error is null && !dialog.Cancellation.IsCancellationRequested); }
-        });
+        };
 
         dialog.ShowDialog(this);
-        await work;
         _busy = false;
-        if (dialog.ExitApplication) { Application.Exit(); return; }
-        if (dialog.Cancellation.IsCancellationRequested) { _download.Enabled = true; return; }
+        if (dialog.ExitApplication) { Application.Exit(); return Task.CompletedTask; }
+        if (dialog.Cancellation.IsCancellationRequested) { _download.Enabled = true; return Task.CompletedTask; }
         if (error is not null)
         {
             _download.Enabled = true;
             MessageBox.Show(this, error.Message, "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return;
+            return Task.CompletedTask;
         }
 
         var open = MessageBox.Show(this, "Subtitles saved successfully.\n\nOpen the file?", "YouTubeSubs", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
@@ -215,6 +214,7 @@ internal sealed class MainForm : Form
             catch (Exception ex) { MessageBox.Show(this, $"Unable to open the file:\n{ex.Message}", "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Error); }
         }
         Close();
+        return Task.CompletedTask;
     }
 
     private void SaveFormat()
