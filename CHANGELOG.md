@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## 1.06 - 27.08.2026
+
+- Added Pillow to the standalone build toolchain.
+- `upgrade.cmd` now regenerates a standards-compliant multi-size Windows ICO from the canonical PNG source before every standalone build.
+- Added pre-build PNG/ICO validation so icon problems fail before the expensive PyInstaller packaging stage.
+- Kept the generated ICO sizes at 16, 24, 32, 48, 64, 128, and 256 pixels for Windows shell, title-bar, taskbar, and shortcut use.
+
 ## 1.05 - 27.08.2026
 
 - Converted YouTubeSubs into a standalone Windows application built as a single `ytsubs.exe`.
@@ -32,7 +39,7 @@ All notable changes to this project are documented here.
 - Kept single-instance activation behavior and strengthened foreground activation.
 - Invalid or unavailable video-like input now fails quietly in the GUI and keeps Download disabled.
 - Removed the `Ready:` status prefix.
-- Added the valid video title as a centered clickable link that opens the canonical YouTube URL in the default browser.
+- Added the valid video title as a centered clickable link that opens the canonical YouTube watch URL in the default browser.
 - Added tolerant video ID extraction from damaged or incomplete YouTube URLs and surrounding text.
 
 ## 1.02 - 27.08.2026
