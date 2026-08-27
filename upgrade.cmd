@@ -52,18 +52,27 @@ if not exist ".venv\Scripts\python.exe" (
 echo === VALIDATION ===
 ".venv\Scripts\python.exe" -m py_compile ytsubs.py || (echo ERROR: Python syntax validation failed.& exit /b 20)
 
+if not exist "assets\ytsubs.ico" (
+  echo ERROR: Missing application icon: assets\ytsubs.ico
+  exit /b 21
+)
+if not exist "assets\ytsubs.png" (
+  echo ERROR: Missing application icon source: assets\ytsubs.png
+  exit /b 22
+)
+
 set "EXPECTED_VERSION="
 for /f "tokens=3" %%V in ('findstr /b /c:"version = " pyproject.toml') do set "EXPECTED_VERSION=%%~V"
 if not defined EXPECTED_VERSION (
   echo ERROR: Unable to read project version from pyproject.toml.
-  exit /b 21
+  exit /b 23
 )
 
 set "ACTUAL_VERSION="
 for /f "delims=" %%V in ('call "%CD%\ytsubs.cmd" --version 2^>nul') do set "ACTUAL_VERSION=%%V"
 if not defined ACTUAL_VERSION (
   echo ERROR: Root ytsubs launcher validation failed.
-  exit /b 22
+  exit /b 24
 )
 
 set "EXPECTED_OUTPUT=ytsubs !EXPECTED_VERSION!"
@@ -71,10 +80,11 @@ if /i not "!ACTUAL_VERSION!"=="!EXPECTED_OUTPUT!" (
   echo ERROR: Version mismatch.
   echo        Expected: !EXPECTED_OUTPUT!
   echo        Actual:   !ACTUAL_VERSION!
-  exit /b 23
+  exit /b 25
 )
 
 echo Version validation: !ACTUAL_VERSION!
+echo Icon validation: assets\ytsubs.ico + assets\ytsubs.png
 
 echo.
 echo YouTubeSubs update completed successfully on branch %BRANCH%.
