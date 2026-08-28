@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## 2.11 - 28.08.2026
+
+- Reduce the main WinForms window width by 25 percent while preserving its existing height and layout behavior.
+- Reduce the URL input and status display widths from 520 px to 390 px so the auto-sized dialog becomes correspondingly narrower.
+- Keep language selection, format selection, buttons, analysis behavior, GUI/CLI split, and PE subsystem validation unchanged.
+- Bump both GUI and CLI assemblies and upgrade validation to version 2.11.
+
 ## 2.10 - 28.08.2026
 
 - Fix the GUI build after moving the dedicated CLI sources into `cli/` in 2.09.
