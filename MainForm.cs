@@ -7,10 +7,10 @@ internal sealed class MainForm : Form
 {
     private readonly AppConfig _config;
     private readonly YoutubeService _service = new();
-    private readonly TextBox _input = new() { Width = 520 };
+    private readonly TextBox _input = new() { Width = 390 };
     private readonly ComboBox _language = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly ComboBox _format = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 72 };
-    private readonly LinkLabel _status = new() { AutoSize = false, Width = 520, Height = 40, TextAlign = ContentAlignment.MiddleCenter };
+    private readonly LinkLabel _status = new() { AutoSize = false, Width = 390, Height = 40, TextAlign = ContentAlignment.MiddleCenter };
     private readonly Button _download = new() { Text = "Download", AutoSize = true, Enabled = false };
     private readonly System.Windows.Forms.Timer _analyzeTimer = new() { Interval = 500 };
     private readonly Dictionary<string, string> _languageMap = new(StringComparer.OrdinalIgnoreCase);
