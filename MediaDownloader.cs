@@ -33,12 +33,38 @@ internal static class MediaDownloader
             ? "bv[height<=1080][vcodec^=avc1]+ba[ext=m4a]/bv[height<=1080]+ba/b[height<=1080][ext=mp4]/b[height<=1080]"
             : "bv[height<=1080][vcodec^=avc1]/bv[height<=1080]";
 
-        var args = CommonArguments();
-        args.AddRange(new[] { "-f", format, "--merge-output-format", "mp4", "-o", outputPath });
-        AddSection(args, start, end, duration, forceKeyframes: partial);
-        args.Add(YoutubeService.CanonicalUrl(videoId));
+        if (!partial)
+        {
+            var fullArgs = CommonArguments();
+            fullArgs.AddRange(new[] { "-f", format, "--merge-output-format", "mp4", "-o", outputPath });
+            fullArgs.Add(YoutubeService.CanonicalUrl(videoId));
+            await RunYtDlpAsync(fullArgs, "video-download", "video-postprocess", duration, phase, progress, token);
+            return;
+        }
 
-        await RunAsync(args, "video-download", "video-postprocess", end - start, phase, progress, token);
+        var clipDuration = end - start;
+        var preroll = TimeSpan.FromSeconds(Math.Min(10.0, start.TotalSeconds));
+        var sectionStart = start - preroll;
+        var tempDirectory = Path.GetDirectoryName(outputPath) ?? AppContext.BaseDirectory;
+        var tempPath = Path.Combine(tempDirectory, $".ytsubs-{Guid.NewGuid():N}.mp4");
+
+        try
+        {
+            var args = CommonArguments();
+            args.AddRange(new[] { "-f", format, "--merge-output-format", "mp4", "-o", tempPath });
+            AddSection(args, sectionStart, end, duration, forceKeyframes: true);
+            args.Add(YoutubeService.CanonicalUrl(videoId));
+
+            await RunYtDlpAsync(args, "video-download", "video-postprocess", end - sectionStart, phase, progress, token);
+
+            phase?.Invoke("video-postprocess");
+            progress?.Invoke(0, "Creating exact cut...");
+            await ReencodeExactCutAsync(tempPath, outputPath, preroll, clipDuration, includeAudio, progress, token);
+        }
+        finally
+        {
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+        }
     }
 
     public static async Task DownloadAudioAsync(
@@ -57,7 +83,7 @@ internal static class MediaDownloader
         AddSection(args, start, end, duration, forceKeyframes: false);
         args.Add(YoutubeService.CanonicalUrl(videoId));
 
-        await RunAsync(args, "audio-download", "audio-convert", end - start, phase, progress, token);
+        await RunYtDlpAsync(args, "audio-download", "audio-convert", end - start, phase, progress, token);
     }
 
     private static List<string> CommonArguments() => new()
@@ -82,7 +108,74 @@ internal static class MediaDownloader
 
     private static string Stamp(TimeSpan value) => value.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture);
 
-    private static async Task RunAsync(
+    private static async Task ReencodeExactCutAsync(
+        string inputPath,
+        string outputPath,
+        TimeSpan skip,
+        TimeSpan clipDuration,
+        bool includeAudio,
+        Action<double, string?>? progress,
+        CancellationToken token)
+    {
+        var psi = new ProcessStartInfo(FfmpegPath)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+
+        foreach (var arg in new[]
+        {
+            "-hide_banner", "-loglevel", "error", "-y",
+            "-i", inputPath,
+            "-ss", Stamp(skip),
+            "-t", Stamp(clipDuration),
+            "-map", "0:v:0",
+            "-c:v", "libx264",
+            "-preset", "medium",
+            "-crf", "18",
+            "-pix_fmt", "yuv420p",
+            "-force_key_frames", "0",
+        }) psi.ArgumentList.Add(arg);
+
+        if (includeAudio)
+        {
+            foreach (var arg in new[] { "-map", "0:a:0?", "-c:a", "aac", "-b:a", "192k" }) psi.ArgumentList.Add(arg);
+        }
+        else
+        {
+            psi.ArgumentList.Add("-an");
+        }
+
+        foreach (var arg in new[] { "-movflags", "+faststart", "-progress", "pipe:1", "-stats_period", "0.5", outputPath })
+            psi.ArgumentList.Add(arg);
+
+        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        process.Start();
+        using var registration = token.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch { } });
+
+        var errors = new List<string>();
+        var stdout = ReadLinesAsync(process.StandardOutput, line =>
+        {
+            if (TryParseFfmpegTime(line, out var processed) && clipDuration.TotalMilliseconds > 0)
+            {
+                var percent = Math.Clamp(processed.TotalMilliseconds / clipDuration.TotalMilliseconds * 100.0, 0, 100);
+                progress?.Invoke(percent, "Re-encoding exact cut...");
+            }
+        }, token);
+        var stderr = ReadLinesAsync(process.StandardError, line => errors.Add(line), token);
+
+        await Task.WhenAll(stdout, stderr, process.WaitForExitAsync(token));
+        token.ThrowIfCancellationRequested();
+
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException(errors.LastOrDefault(line => !string.IsNullOrWhiteSpace(line)) ?? $"FFmpeg failed with exit code {process.ExitCode}.");
+
+        progress?.Invoke(100, "Exact cut complete");
+    }
+
+    private static async Task RunYtDlpAsync(
         IReadOnlyList<string> args,
         string downloadPhase,
         string postProcessPhase,
