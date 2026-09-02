@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 
-$UpgradeRevision = '2.13-runner-01'
+$UpgradeRevision = '2.13-runner-02'
 $ExpectedVersion = '2.13'
 $Branch = if ($env:YTSUBS_BRANCH) { $env:YTSUBS_BRANCH } else { 'devel' }
 $Repo = if ($env:YTSUBS_REPO_DIR) { $env:YTSUBS_REPO_DIR } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
@@ -115,6 +115,29 @@ function Get-PeSubsystem {
     return [BitConverter]::ToUInt16($bytes, $pe + 92)
 }
 
+function Repair-BootstrapChanges {
+    param([string]$GitPath)
+
+    $status = Invoke-NativeCapture $GitPath @('-C', $Repo, 'status', '--porcelain', '--untracked-files=no')
+    if ($status.ExitCode -ne 0) { throw 'Unable to inspect tracked local changes.' }
+    if ($status.Output.Count -eq 0) { return }
+
+    $bootstrapFiles = @('upgrade.cmd', 'upgrade.ps1')
+    $bootstrapChanged = @()
+    foreach ($line in $status.Output) {
+        if ($line.Length -lt 4) { continue }
+        $path = $line.Substring(3).Trim().Trim('"')
+        if ($bootstrapFiles -contains $path) { $bootstrapChanged += $path }
+    }
+
+    if ($bootstrapChanged.Count -eq 0) { return }
+    $bootstrapChanged = @($bootstrapChanged | Sort-Object -Unique)
+    Write-UpgradeLine ("Bootstrap file change detected: {0}" -f ($bootstrapChanged -join ', ')) Yellow
+    Write-UpgradeLine 'Restoring bootstrap files from the current repository commit before synchronization.'
+    $arguments = @('-C', $Repo, 'checkout', 'HEAD', '--') + $bootstrapChanged
+    Invoke-Native $GitPath $arguments
+}
+
 try {
     Write-UpgradeLine '============================================================'
     Write-UpgradeLine 'YouTubeSubs upgrade diagnostic log'
@@ -141,12 +164,17 @@ try {
     if ($startSha.ExitCode -ne 0) { throw 'Unable to determine the starting Git commit.' }
     Write-UpgradeLine ("Starting commit: {0}" -f ($startSha.Output | Select-Object -First 1))
 
+    # Bootstrap files are updater infrastructure, not user data. A local bootstrap
+    # change must not trap upgrade.cmd in a self-blocking loop. Only these known
+    # files are auto-restored; every other tracked local edit remains protected.
+    Repair-BootstrapChanges $git
+
     $status = Invoke-NativeCapture $git @('-C', $Repo, 'status', '--porcelain', '--untracked-files=no')
     if ($status.ExitCode -ne 0) { throw 'Unable to inspect tracked local changes.' }
     if ($status.Output.Count -gt 0) {
         Write-UpgradeLine 'Tracked local changes:' Yellow
         $status.Output | ForEach-Object { Write-UpgradeLine $_ Yellow }
-        throw 'Tracked local changes detected. Commit, stash, or revert them before upgrading.'
+        throw 'Tracked local changes detected outside updater bootstrap files. Commit, stash, or revert them before upgrading.'
     }
 
     Invoke-Native $git @('-C', $Repo, 'fetch', 'origin', $Branch)
