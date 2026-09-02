@@ -10,6 +10,8 @@ All notable changes to this project are documented here.
 - Keep full-video downloads on the existing fast non-transcoding path.
 - Preserve output semantics during exact cuts: Video only remains silent MP4, while Video + Audio produces one MP4 with AAC audio.
 - Report the explicit FFmpeg exact-cut pass through the existing real progress telemetry.
+- Make media-tool maintenance incremental: yt-dlp now checks its stable channel and only replaces itself when needed, while FFmpeg compares the installed version with Gyan's small `.ver` endpoint before downloading the essentials archive.
+- Keep full validation of yt-dlp, FFmpeg, and ffprobe after every dependency check even when no download is required.
 - Bump GUI and CLI assemblies and upgrade validation to version 2.14.
 
 ## 2.13 - 02.09.2026
@@ -157,7 +159,7 @@ All notable changes to this project are documented here.
 - Replace the experimental Python/Nuitka development line with a clean .NET 10 Windows Forms port.
 - Keep the port intentionally 1:1 with the verified Python application instead of redesigning the workflow or adding unrelated features.
 - Preserve GUI mode without arguments and CLI mode with arguments.
-- Preserve tolerant YouTube video ID extraction, automatic 500 ms analysis, clickable video title, invalid-video inline status, language selection, manual-over-auto preference, output formats `.srt`, `.sub`, `.txt`, `.vtt`, remembered GUI format, exit codes, stdout/stderr behavior, single-instance activation, adaptive modal progress, cancellation behavior, post-save open prompt, local configuration, and `off` / `single` / `all` logging modes.
+- Preserve tolerant YouTube video ID extraction, automatic 500 ms analysis, clickable video title, invalid-video inline status, language selection, manual-over-auto preference, output formats `.srt`, `.sub`, `.txt`, `.vtt`, remembered GUI format, exit codes, stdout/stderr behavior, single-instance activation, adaptive modal progress, cancellation behavior, post-save open prompt, local configuration, logging, and `off` / `single` / `all` logging modes.
 - Use `YoutubeExplode` 6.6.2 for YouTube video metadata and closed-caption discovery/download.
 - Publish as a self-contained single-file `win-x64` .NET 10 application named `ytsubs.exe`.
 - Integrate the existing YouTubeSubs icon into the .NET executable through `ApplicationIcon`; WinForms windows reuse the executable icon.
