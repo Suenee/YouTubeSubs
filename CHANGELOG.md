@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## 2.12 - 02.09.2026
+
+- Add optional video and audio downloads while keeping subtitles selected by default.
+- Add MP4 video output capped at 1080p and MP3 192 kb/s audio output through yt-dlp and FFmpeg.
+- Add fast partial-media downloads using a From / To-or-length range instead of requiring a complete video download first.
+- Accept `SS`, `MMSS`, `HHMMSS`, `MM:SS`, and `HH:MM:SS` time input forms.
+- Accept `+duration` as a relative end after From and `-duration` as a relative start before To.
+- Read YouTube shared timestamp URL parameters (`t` / `start`, including seconds and `1h2m3s` forms) into the initial From value.
+- Clamp calculated ranges silently to the actual video duration, swap reversed absolute boundaries automatically, and disable Download for clips shorter than two seconds.
+- Show the normalized absolute range and calculated clip duration in the GUI.
+- Use Save As with a fixed extension for a single selected output; use folder selection when multiple outputs are selected.
+- Remember the last output directory, including mapped/network-drive locations.
+- Allow metadata analysis and video/audio downloading even when a video has no subtitle tracks.
+- Add real yt-dlp percentage reporting to the existing progress dialog and retain cancellation support.
+- Add `tools-update.ps1`; `upgrade.cmd` installs/updates the latest stable yt-dlp executable and FFmpeg essentials build automatically and validates both tools.
+- Make `upgrade.cmd` Git operations safe for mapped/UNC repositories without requiring a manual global `safe.directory` entry.
+- Keep one-video-at-a-time behavior; no playlists or batch download workflow is introduced.
+- Bump GUI and CLI assemblies and upgrade validation to version 2.12.
+
 ## 2.11 - 28.08.2026
 
 - Reduce the main WinForms window width by 25 percent while preserving its existing height and layout behavior.
