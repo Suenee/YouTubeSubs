@@ -1,8 +1,12 @@
 @echo off
 cls
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 
-for %%I in ("%~dp0.") do set "YTSUBS_REPO_DIR=%%~fI"
+if defined YTSUBS_REPO_DIR (
+    for %%I in ("%YTSUBS_REPO_DIR%\.") do set "YTSUBS_REPO_DIR=%%~fI"
+) else (
+    for %%I in ("%~dp0.") do set "YTSUBS_REPO_DIR=%%~fI"
+)
 set "YTSUBS_BRANCH=devel"
 
 where git >nul 2>nul || (echo ERROR: Git was not found.& exit /b 10)
@@ -36,7 +40,5 @@ if errorlevel 1 (
     exit /b 15
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%YTSUBS_REMOTE_RUNNER%"
-set "YTSUBS_RC=%ERRORLEVEL%"
-del "%YTSUBS_REMOTE_RUNNER%" >nul 2>nul
-exit /b %YTSUBS_RC%
+rem Keep the runner call, cleanup, and exit on one parsed line so replacing upgrade.cmd during Git sync cannot mix launcher generations.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%YTSUBS_REMOTE_RUNNER%" & set "YTSUBS_RC=!ERRORLEVEL!" & del "%YTSUBS_REMOTE_RUNNER%" >nul 2>nul & exit /b !YTSUBS_RC!
