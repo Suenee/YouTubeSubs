@@ -8,6 +8,7 @@ YouTubeSubs follows the shared Windows upgrade protocol maintained in `Suenee/Fo
 - The launcher always fetches the current `upgrade.ps1` from `origin/devel` into a temporary file and executes that copy.
 - `upgrade.ps1` is authoritative for repository synchronization, dependencies, local migration/cleanup, build, validation, deployment, restart, diagnostics, and final status.
 - `upgrade.log` is generated in the repository root in single-run mode and is ignored by Git.
+- Local modifications to the known updater bootstrap files `upgrade.cmd` and `upgrade.ps1` are automatically restored from the current local `HEAD` before repository synchronization, so updater self-changes cannot trap a machine in a permanent dirty-worktree failure. Other tracked local changes are never discarded automatically and still stop the upgrade.
 
 ## Network repositories
 
