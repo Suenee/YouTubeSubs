@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## 2.14 - 03.09.2026
+
+- Replace the insufficient direct `--force-keyframes-at-cuts` partial-video path with a two-stage exact-cut workflow.
+- Download partial video with up to 10 seconds of preroll before the requested start so FFmpeg has valid reference frames available before the visible cut begins.
+- Re-encode only partial video outputs explicitly through FFmpeg H.264 so the resulting MP4 begins on a clean keyframe instead of undecodable P/B-frame dependencies.
+- Keep full-video downloads on the existing fast non-transcoding path.
+- Preserve output semantics during exact cuts: Video only remains silent MP4, while Video + Audio produces one MP4 with AAC audio.
+- Report the explicit FFmpeg exact-cut pass through the existing real progress telemetry.
+- Bump GUI and CLI assemblies and upgrade validation to version 2.14.
+
 ## 2.13 - 02.09.2026
 
 - Replace the single ambiguous progress indicator with two stacked progress bars: current-stage progress and learned overall job progress.
