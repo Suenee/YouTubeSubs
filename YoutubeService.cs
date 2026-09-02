@@ -24,6 +24,8 @@ internal sealed record VideoInfo(string VideoId, string Title, TimeSpan Duration
     }
 }
 
+internal sealed record CaptionSlice(string Text, TimeSpan Start, TimeSpan End);
+
 internal sealed class YoutubeService
 {
     private readonly YoutubeClient _youtube = new();
@@ -73,13 +75,17 @@ internal sealed class YoutubeService
     {
         time = TimeSpan.Zero;
         if (double.TryParse(value.TrimEnd('s'), NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds) && seconds >= 0)
-        { time = TimeSpan.FromSeconds(seconds); return true; }
+        {
+            time = TimeSpan.FromSeconds(seconds);
+            return true;
+        }
         var m = Regex.Match(value, @"^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$", RegexOptions.IgnoreCase);
         if (!m.Success || m.Value.Length == 0) return false;
         var h = m.Groups[1].Success ? int.Parse(m.Groups[1].Value) : 0;
         var min = m.Groups[2].Success ? int.Parse(m.Groups[2].Value) : 0;
         var sec = m.Groups[3].Success ? int.Parse(m.Groups[3].Value) : 0;
-        time = new TimeSpan(h, min, sec); return true;
+        time = new TimeSpan(h, min, sec);
+        return true;
     }
 
     public static string CleanFilename(string name)
@@ -107,37 +113,78 @@ internal sealed class YoutubeService
         return new VideoInfo(videoId, video.Title, video.Duration ?? TimeSpan.Zero, tracks, original);
     }
 
-    public async Task<string> DownloadAndFormatAsync(VideoInfo info, string format, string? languageCode, Action<string>? phase, CancellationToken cancellationToken)
+    public async Task<string> DownloadAndFormatAsync(
+        VideoInfo info,
+        string format,
+        string? languageCode,
+        Action<string>? phase,
+        CancellationToken cancellationToken,
+        TimeSpan? rangeStart = null,
+        TimeSpan? rangeEnd = null)
     {
         if (info.Tracks.Count == 0) throw new InvalidOperationException("This video has no available subtitles.");
         var code = languageCode ?? info.OriginalCode ?? info.Tracks[0].Code;
         var matches = info.Tracks.Where(t => string.Equals(t.Code, code, StringComparison.OrdinalIgnoreCase)).ToList();
         if (matches.Count == 0) throw new InvalidOperationException($"No subtitle track is available for language '{code}'.");
         var selected = matches.FirstOrDefault(t => !t.Generated) ?? matches[0];
-        phase?.Invoke("download");
+        phase?.Invoke("subtitle-download");
         var track = await _youtube.Videos.ClosedCaptions.GetAsync(selected.Source, cancellationToken);
-        phase?.Invoke("format");
-        return Format(track, format);
+        phase?.Invoke("subtitle-format");
+
+        var start = rangeStart ?? TimeSpan.Zero;
+        var end = rangeEnd ?? info.Duration;
+        if (end <= TimeSpan.Zero) end = track.Captions.Count == 0 ? TimeSpan.Zero : track.Captions.Max(c => c.Offset + c.Duration);
+        return Format(track, format, start, end);
     }
 
-    private static string Format(ClosedCaptionTrack track, string format) => format switch
+    private static string Format(ClosedCaptionTrack track, string format, TimeSpan start, TimeSpan end)
     {
-        "txt" => FormatTxt(track), "srt" => FormatSrt(track), "vtt" => FormatVtt(track), "sub" => FormatSub(track), _ => throw new ArgumentException($"Unsupported format '{format}'.")
-    };
+        var slices = Slice(track, start, end);
+        return format switch
+        {
+            "txt" => FormatTxt(slices),
+            "srt" => FormatSrt(slices),
+            "vtt" => FormatVtt(slices),
+            "sub" => FormatSub(slices),
+            _ => throw new ArgumentException($"Unsupported format '{format}'."),
+        };
+    }
 
-    private static string FormatTxt(ClosedCaptionTrack track)
+    private static List<CaptionSlice> Slice(ClosedCaptionTrack track, TimeSpan start, TimeSpan end)
     {
-        var output = new List<string>();
+        var result = new List<CaptionSlice>();
         foreach (var caption in track.Captions)
         {
-            var lines = Regex.Split(caption.Text.Replace("\r\n", "\n").Replace('\r', '\n'), "\n").Select(line => line.TrimEnd()).ToList();
+            var captionStart = caption.Offset;
+            var captionEnd = caption.Offset + caption.Duration;
+            if (captionEnd <= start || captionStart >= end) continue;
+
+            var clippedStart = captionStart < start ? start : captionStart;
+            var clippedEnd = captionEnd > end ? end : captionEnd;
+            if (clippedEnd <= clippedStart) continue;
+
+            result.Add(new CaptionSlice(caption.Text, clippedStart - start, clippedEnd - start));
+        }
+        return result;
+    }
+
+    private static string FormatTxt(IReadOnlyList<CaptionSlice> captions)
+    {
+        var output = new List<string>();
+        foreach (var caption in captions)
+        {
+            var lines = Regex.Split(caption.Text.Replace("\r\n", "\n").Replace('\r', '\n'), "\n")
+                .Select(line => line.TrimEnd()).ToList();
             while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[0])) lines.RemoveAt(0);
             while (lines.Count > 0 && string.IsNullOrWhiteSpace(lines[^1])) lines.RemoveAt(lines.Count - 1);
             var previousBlank = false;
             foreach (var line in lines)
             {
                 var blank = string.IsNullOrWhiteSpace(line);
-                if (blank) { if (!previousBlank && output.Count > 0 && !string.IsNullOrWhiteSpace(output[^1])) output.Add(string.Empty); }
+                if (blank)
+                {
+                    if (!previousBlank && output.Count > 0 && !string.IsNullOrWhiteSpace(output[^1])) output.Add(string.Empty);
+                }
                 else output.Add(line);
                 previousBlank = blank;
             }
@@ -146,22 +193,46 @@ internal sealed class YoutubeService
         return string.Join(Environment.NewLine, output) + (output.Count > 0 ? Environment.NewLine : string.Empty);
     }
 
-    private static string FormatSrt(ClosedCaptionTrack track)
+    private static string FormatSrt(IReadOnlyList<CaptionSlice> captions)
     {
         var sb = new StringBuilder();
-        for (var i = 0; i < track.Captions.Count; i++) { var c = track.Captions[i]; sb.AppendLine((i + 1).ToString(CultureInfo.InvariantCulture)); sb.Append(Stamp(c.Offset, false, true)).Append(" --> ").AppendLine(Stamp(c.Offset + c.Duration, false, true)); sb.AppendLine(c.Text).AppendLine(); }
-        return sb.ToString().TrimEnd() + Environment.NewLine;
+        for (var i = 0; i < captions.Count; i++)
+        {
+            var c = captions[i];
+            sb.AppendLine((i + 1).ToString(CultureInfo.InvariantCulture));
+            sb.Append(Stamp(c.Start, false, true)).Append(" --> ").AppendLine(Stamp(c.End, false, true));
+            sb.AppendLine(c.Text).AppendLine();
+        }
+        return sb.Length == 0 ? string.Empty : sb.ToString().TrimEnd() + Environment.NewLine;
     }
-    private static string FormatVtt(ClosedCaptionTrack track)
+
+    private static string FormatVtt(IReadOnlyList<CaptionSlice> captions)
     {
-        var sb = new StringBuilder("WEBVTT").AppendLine().AppendLine(); foreach (var c in track.Captions) { sb.Append(Stamp(c.Offset, true, false)).Append(" --> ").AppendLine(Stamp(c.Offset + c.Duration, true, false)); sb.AppendLine(c.Text).AppendLine(); } return sb.ToString();
+        var sb = new StringBuilder("WEBVTT").AppendLine().AppendLine();
+        foreach (var c in captions)
+        {
+            sb.Append(Stamp(c.Start, true, false)).Append(" --> ").AppendLine(Stamp(c.End, true, false));
+            sb.AppendLine(c.Text).AppendLine();
+        }
+        return sb.ToString();
     }
-    private static string FormatSub(ClosedCaptionTrack track)
+
+    private static string FormatSub(IReadOnlyList<CaptionSlice> captions)
     {
-        var sb = new StringBuilder(); foreach (var c in track.Captions) { sb.Append(Stamp(c.Offset, false, false)).Append(',').AppendLine(Stamp(c.Offset + c.Duration, false, false)); sb.AppendLine(c.Text.Replace(Environment.NewLine, "[br]")).AppendLine(); } return sb.ToString();
+        var sb = new StringBuilder();
+        foreach (var c in captions)
+        {
+            sb.Append(Stamp(c.Start, false, false)).Append(',').AppendLine(Stamp(c.End, false, false));
+            sb.AppendLine(c.Text.Replace("\r\n", "[br]").Replace("\n", "[br]").Replace("\r", "[br]")).AppendLine();
+        }
+        return sb.ToString();
     }
+
     private static string Stamp(TimeSpan time, bool vtt, bool srt)
     {
-        var hours = (int)Math.Floor(time.TotalHours); var sep = vtt ? '.' : srt ? ',' : ':'; return $"{hours:00}:{time.Minutes:00}:{time.Seconds:00}{sep}{time.Milliseconds:000}";
+        if (time < TimeSpan.Zero) time = TimeSpan.Zero;
+        var hours = (int)Math.Floor(time.TotalHours);
+        var sep = vtt ? '.' : srt ? ',' : ':';
+        return $"{hours:00}:{time.Minutes:00}:{time.Seconds:00}{sep}{time.Milliseconds:000}";
     }
 }
