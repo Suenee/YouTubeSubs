@@ -8,6 +8,10 @@ build/
 *.suo
 *.log
 ytsubs.exe
+ytsubs-cli.exe
 assets/ytsubs.ico
+tools/*.exe
+tools/*.zip
 .venv/
 __pycache__/
+.pytest_cache/
