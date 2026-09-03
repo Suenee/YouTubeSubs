@@ -99,7 +99,7 @@ internal sealed class MainForm : Form
         _format.SelectedIndexChanged += (_, _) => SaveFormat();
         _download.Click += async (_, _) => await DownloadAsync();
         cancel.Click += (_, _) => Close();
-        _subtitles.CheckedChanged += (_, _) => UpdateDownloadState();
+        _subtitles.CheckedChanged += (_, _) => { UpdateFormatState(); UpdateDownloadState(); };
         _video.CheckedChanged += (_, _) =>
         {
             if (_video.Checked && !_audioSuggestionHandled)
@@ -120,6 +120,7 @@ internal sealed class MainForm : Form
         };
         _analyzeTimer.Tick += async (_, _) => { _analyzeTimer.Stop(); await AnalyzeAsync(); };
         Shown += (_, _) => { _input.Focus(); ActivateFront(); };
+        UpdateFormatState();
     }
 
     public void ActivateFront()
@@ -132,6 +133,8 @@ internal sealed class MainForm : Form
         Activate();
         BeginInvoke(new Action(async () => { await Task.Delay(200); if (!IsDisposed) TopMost = false; }));
     }
+
+    private void UpdateFormatState() => _format.Enabled = _subtitles.Enabled && _subtitles.Checked;
 
     private static Panel WrapTimeBox(TimeTextBox box)
     {
@@ -204,6 +207,7 @@ internal sealed class MainForm : Form
         _language.SelectedIndex = 0;
         _subtitles.Enabled = result.Tracks.Count > 0;
         if (result.Tracks.Count == 0) _subtitles.Checked = false;
+        UpdateFormatState();
 
         var timestamp = YoutubeService.ExtractTimestamp(value);
         _normalizingRange = true;
@@ -520,81 +524,48 @@ internal sealed class MainForm : Form
         var open = MessageBox.Show(this, message, "YouTubeSubs", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
         if (open == DialogResult.Yes)
         {
-            try { Process.Start(new ProcessStartInfo(actualKinds.Count == 1 ? paths.Values.First() : directory) { UseShellExecute = true }); } catch { }
+            if (actualKinds.Count == 1) Process.Start(new ProcessStartInfo(paths[actualKinds[0]]) { UseShellExecute = true });
+            else Process.Start(new ProcessStartInfo(directory) { UseShellExecute = true });
         }
-        Close();
+        UpdateDownloadState();
     }
 
     private void SaveFormat()
     {
-        var value = (_format.SelectedItem?.ToString() ?? ".srt").TrimStart('.').ToLowerInvariant();
-        if (value is "srt" or "sub" or "txt" or "vtt")
+        var selected = _format.SelectedItem?.ToString();
+        if (string.IsNullOrWhiteSpace(selected)) return;
+        _config.LastFormat = selected.TrimStart('.').ToLowerInvariant();
+        _config.Save();
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        _config.Save();
+        base.OnFormClosed(e);
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (keyData == Keys.Enter && (_from.Focused || _to.Focused))
         {
-            _config.LastFormat = value;
-            _config.Save();
+            NormalizeRange();
+            return true;
         }
-    }
-}
-
-internal sealed class TimeTextBox : TextBox
-{
-    private const int WmPaste = 0x0302;
-
-    protected override void OnEnter(EventArgs e)
-    {
-        base.OnEnter(e);
-        BeginInvoke(new Action(SelectAll));
+        return base.ProcessCmdKey(ref msg, keyData);
     }
 
-    protected override void OnKeyPress(KeyPressEventArgs e)
+    protected override void OnMouseDown(MouseEventArgs e)
     {
-        if (char.IsControl(e.KeyChar)) { base.OnKeyPress(e); return; }
-        if (!char.IsDigit(e.KeyChar) && e.KeyChar != ':' && e.KeyChar != '+' && e.KeyChar != '-') { e.Handled = true; return; }
-        if ((e.KeyChar == '+' || e.KeyChar == '-') && !(SelectionStart == 0 && (SelectionLength == Text.Length || (Text.Length == 0 && SelectionLength == 0)))) { e.Handled = true; return; }
-        base.OnKeyPress(e);
-    }
-
-    protected override void WndProc(ref Message m)
-    {
-        if (m.Msg == WmPaste && Clipboard.ContainsText())
+        if (_from.Focused || _to.Focused)
         {
-            var paste = Clipboard.GetText();
-            var candidate = Text.Remove(SelectionStart, SelectionLength).Insert(SelectionStart, paste);
-            if (!ValidCharacters(candidate)) return;
+            ActiveControl = null;
+            NormalizeRange();
         }
-        base.WndProc(ref m);
+        base.OnMouseDown(e);
     }
 
-    private bool ValidCharacters(string value)
+    internal void CommitTimeEdit()
     {
-        if (value.Length > MaxLength) return false;
-        for (var i = 0; i < value.Length; i++)
-        {
-            var c = value[i];
-            if (char.IsDigit(c) || c == ':') continue;
-            if ((c == '+' || c == '-') && i == 0 && value.Count(x => x is '+' or '-') == 1) continue;
-            return false;
-        }
-        return true;
-    }
-}
-
-internal static class DialogPositioning
-{
-    public static DialogResult ShowSaveDialogCenteredOnScreen(SaveFileDialog dialog, Form owner)
-    {
-        var area = Screen.FromControl(owner).WorkingArea;
-        using var proxy = new Form
-        {
-            StartPosition = FormStartPosition.Manual,
-            Bounds = area,
-            FormBorderStyle = FormBorderStyle.None,
-            ShowInTaskbar = false,
-            Opacity = 0,
-            Owner = owner,
-        };
-        proxy.Show();
-        try { return dialog.ShowDialog(proxy); }
-        finally { proxy.Close(); }
+        if (_from.Focused || _to.Focused) NormalizeRange();
     }
 }
