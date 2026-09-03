@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## 2.19 - 04.09.2026
+
+- Move project-media ID collision handling from a modal popup into the main project window.
+- Detect an occupied project media ID as soon as project mode is applied and show the configured marker in red.
+- Replace the normal Download button with inline `Replace` and `Move to XX` actions while the requested ID is occupied; `XX` is always the first free ID above the requested ID.
+- Re-check the selected ID immediately before downloading so a newly-created conflicting file is never overwritten silently.
+- Keep replacement downloads on the existing temporary-file safety path and keep Move semantics identical to the previous collision dialog.
+- Harden Windows taskbar progress by requesting `ITaskbarList3` directly through `CoCreateInstance`, resolving the actual top-level taskbar window, and logging the first taskbar API failure instead of swallowing it silently.
+- Preserve version 2.18 as rollback branch `restore/2.18-before-inline-collision`.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.19.
+
 ## 2.18 - 04.09.2026
 
 - Fix the Windows taskbar progress COM activation introduced in 2.17 by creating the TaskbarList COM object through its CLSID and then querying the `ITaskbarList3` interface.
