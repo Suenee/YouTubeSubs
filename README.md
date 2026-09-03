@@ -1,35 +1,34 @@
 # YouTubeSubs
 
-YouTubeSubs is a standalone Windows GUI and CLI utility for downloading manual or auto-generated YouTube subtitles without automatic translation.
+YouTubeSubs is a Windows utility for downloading YouTube subtitles and preparing video/audio clips. The current `devel` branch is the .NET 10 implementation. The last verified Python implementation is preserved in branch `ALFA` as version 1.13 at commit `0b7271a717e3c308c9dd2bbaf2a75fdc0a532cd7`.
 
-The current `devel` branch is the .NET 10 implementation. The last verified Python implementation is preserved separately in branch `ALFA` as version 1.13 at commit `0b7271a717e3c308c9dd2bbaf2a75fdc0a532cd7`.
+## Applications
 
-## Design goal
+The project publishes two executables with intentionally different Windows subsystems:
 
-The .NET port is intentionally a 1:1 functional replacement of the verified Python application. It does not redesign the workflow or add unrelated features.
+- `ytsubs.exe` — WinForms GUI application.
+- `ytsubs-cli.exe` — console application for synchronous CLI subtitle workflows.
+
+The GUI remains single-instance. A second GUI launch activates the existing window; project-media launch arguments are forwarded to the existing instance.
 
 ## Features
 
-- Accepts a full YouTube URL, a damaged/incomplete URL with one recoverable 11-character video ID, or a plain 11-character video ID.
-- One portable `ytsubs.exe` for distribution.
-- Double-click / no arguments: WinForms GUI.
-- Arguments supplied: CLI mode with stdout/stderr suitable for pipes and redirection.
-- Output formats: `.srt`, `.sub` (SubViewer), `.txt`, `.vtt`.
-- Discovers real subtitle tracks exposed by YouTube; automatic translation is never used.
-- `Auto` prefers the first auto-generated language as the likely spoken/original language; if none exists, the first manual track is used.
-- Within a selected language, manual subtitles are preferred over auto-generated subtitles.
-- Remembers the last GUI output format; default is `.srt`.
-- Adaptive modal progress estimation stores learned timings locally.
-- Single-instance GUI behavior with activation of the existing window.
-- Native Save As dialog positioned on the work area of the monitor containing the application.
-- Embedded YouTubeSubs application icon in the final executable and GUI windows.
-- Optional file logging modes: `off`, `single`, `all`.
+- Accept a YouTube URL or plain 11-character video ID.
+- Download manual or auto-generated subtitles without automatic translation.
+- Subtitle formats: `.srt`, `.sub`, `.txt`, `.vtt`.
+- Optional MP4 video and MP3 audio output.
+- Exact partial-video cuts with a clean first keyframe.
+- Video-only output creates a silent MP4; Video + Audio creates one MP4 containing both streams.
+- Project-media workflow for VoicePrompter/BROLL preparation.
+- Repository-local configuration and logs, including mapped/network-drive repositories.
+- Logging modes `off`, `single`, and `all`.
 
 ## Technology
 
 - .NET 10
 - Windows Forms
-- `YoutubeExplode` 6.6.2 for YouTube video metadata and closed-caption tracks
+- `YoutubeExplode` 6.6.2
+- yt-dlp, FFmpeg, and ffprobe maintained by `tools-update.ps1`
 - self-contained, single-file `win-x64` publishing
 
 ## Build / update
@@ -43,15 +42,7 @@ git switch devel
 upgrade.cmd
 ```
 
-`upgrade.cmd` always self-updates first. It then updates the branch, checks for the current .NET 10 SDK, installs the Microsoft .NET 10 SDK through `winget` when necessary, restores dependencies, validates sources, reconstructs and validates the tracked Base64 icon, publishes a self-contained single-file executable, validates the candidate before replacing the current executable, and performs a portable smoke test outside the repository.
-
-The final distributable is:
-
-```text
-ytsubs.exe
-```
-
-No .NET runtime, source files, CMD files, or SDK are required beside the distributed executable.
+`upgrade.cmd` is a thin self-updating launcher. It retrieves the current `upgrade.ps1` from `origin/devel`, safely synchronizes the repository, supports mapped/UNC repository locations, repairs updater bootstrap line-ending changes, verifies or installs the current .NET 10 SDK, updates media tools, builds both applications, validates their PE subsystems and versions, deploys them, and restarts the GUI when it was running before the update.
 
 ## GUI
 
@@ -61,28 +52,70 @@ Run:
 ytsubs.exe
 ```
 
-Enter a YouTube URL or video ID. Analysis starts automatically after 500 ms. A valid video shows its title as a clickable link and exposes available subtitle languages. Invalid or unavailable input shows:
+Enter a YouTube URL or video ID. Analysis starts automatically after 500 ms. Select subtitles, video, and/or audio, set the optional From/To range, then download.
 
-```text
-Invalid Video ID. Please try again...
+## Project media mode
+
+Project media mode is intended for VoicePrompter/news-production workflows and is launched through the GUI executable.
+
+Audio + video MP4:
+
+```cmd
+ytsubs.exe --avid=17 --project="Zprávy z exopolitiky 29"
 ```
 
-The language selector starts with `Auto`. The format selector is on the same row and offers `.srt`, `.sub`, `.txt`, `.vtt`.
+Silent BROLL MP4:
 
-Analysis and download use modal progress dialogs centered relative to the main application window. Cancel returns to the application; closing a progress dialog with its X exits the application. After saving, YouTubeSubs asks whether the saved file should be opened using the Windows file association.
+```cmd
+ytsubs.exe --brollid=17 --project="Zprávy z exopolitiky 29"
+```
+
+In project mode:
+
+- `--avid` locks Video + Audio on and disables Subtitles/language selection.
+- `--brollid` locks Video on, Audio off, and disables Subtitles/language selection.
+- YouTubeSubs proposes a short editable clip name, limited to four words by default.
+- Download does not ask for an output directory.
+- The application searches the configured editing root for exactly one `YYYYMMDD Project` directory with the requested project name. If none exists, today's directory is created. Multiple dated directories for the same project name are treated as an error.
+- Output is stored below `BROLL` as `NNN - short clip name.mp4`.
+- If the requested ID already exists, the user gets `Replace`, `Move to XX`, or `Cancel`. `XX` is the first free ID after the requested number.
+- After a successful download, the marker template for the selected mode is rendered with the final ID and copied to Clipboard.
+
+## Marker templates and project configuration
+
+Configuration is stored beside the application under:
+
+```text
+config\config.json
+```
+
+Relevant project-media settings are:
+
+```json
+{
+  "editing_root": "N:\\WORK\\Sueneé Universe\\EDITING",
+  "clip_name_max_words": 4,
+  "av_marker_html": "VLC AV {id}",
+  "broll_marker_html": "VLC LOOP {id}"
+}
+```
+
+Replace the marker values with the actual HTML fragments required by VoicePrompter. The only required placeholder is `{id}`. After download, YouTubeSubs publishes the rendered marker to Clipboard as both plain text and HTML clipboard data.
 
 ## CLI
 
+Use `ytsubs-cli.exe` for console subtitle workflows:
+
 ```cmd
-ytsubs.exe VIDEO_ID
-ytsubs.exe "https://www.youtube.com/watch?v=VIDEO_ID"
-ytsubs.exe VIDEO_ID --format srt
-ytsubs.exe VIDEO_ID --format sub
-ytsubs.exe VIDEO_ID --format txt
-ytsubs.exe VIDEO_ID --format vtt
-ytsubs.exe VIDEO_ID --lang en
-ytsubs.exe VIDEO_ID -o subtitles.srt --format srt
-ytsubs.exe --version
+ytsubs-cli.exe VIDEO_ID
+ytsubs-cli.exe "https://www.youtube.com/watch?v=VIDEO_ID"
+ytsubs-cli.exe VIDEO_ID --format srt
+ytsubs-cli.exe VIDEO_ID --format sub
+ytsubs-cli.exe VIDEO_ID --format txt
+ytsubs-cli.exe VIDEO_ID --format vtt
+ytsubs-cli.exe VIDEO_ID --lang en
+ytsubs-cli.exe VIDEO_ID -o subtitles.srt --format srt
+ytsubs-cli.exe --version
 ```
 
 Default CLI format is plain text to stdout. Automatic translation is never used.
@@ -97,18 +130,16 @@ Default CLI format is plain text to stdout. Automatic translation is never used.
 | 4 | YouTube, network, or caption API failure |
 | 5 | Output file write failure |
 
-## Local configuration
+## Local state
 
-Runtime configuration, logging settings, last GUI format, and learned progress timings are stored in:
-
-```text
-%LOCALAPPDATA%\YouTubeSubs\config.json
-```
-
-The optional log file is:
+Persistent development/runtime state remains inside the repository/application directory:
 
 ```text
-%LOCALAPPDATA%\YouTubeSubs\ytsubs.log
+config\config.json
+logs\YouTubeSubs.log
+logs\upgrade.log
 ```
+
+`%TEMP%` is reserved for disposable processing/bootstrap data only.
 
 See [MANUAL.md](MANUAL.md) and [CHANGELOG.md](CHANGELOG.md) for additional details.
