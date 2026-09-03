@@ -6,7 +6,7 @@ namespace YouTubeSubs;
 
 internal sealed class AppConfig
 {
-    public string Logging { get; set; } = "off";
+    public string Logging { get; set; } = "single";
     public int Samples { get; set; }
     public string LastFormat { get; set; } = "srt";
     public string LastOutputDirectory { get; set; } = "";
@@ -61,7 +61,7 @@ internal sealed class AppConfig
     private void Normalize()
     {
         Logging = Logging.Trim().ToLowerInvariant();
-        if (Logging is not ("off" or "single" or "all")) Logging = "off";
+        if (Logging is not ("off" or "single" or "all")) Logging = "single";
         if (LastFormat is not ("srt" or "sub" or "txt" or "vtt")) LastFormat = "srt";
 
         var defaults = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
