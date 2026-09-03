@@ -105,7 +105,7 @@ internal static class ProjectStorage
 {
     private static readonly Regex NumberedClip = new(@"^(?<id>\d+)(?:\s*-\s*.*)?$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    public static string ResolveBrollDirectory(string editingRoot, string project)
+    public static string ResolveProjectDirectory(string editingRoot, string project)
     {
         if (string.IsNullOrWhiteSpace(editingRoot)) throw new InvalidOperationException("Project editing root is not configured.");
         Directory.CreateDirectory(editingRoot);
@@ -121,6 +121,12 @@ internal static class ProjectStorage
             ? matches[0]
             : Path.Combine(editingRoot, $"{DateTime.Now:yyyyMMdd} {project}");
         Directory.CreateDirectory(projectDirectory);
+        return projectDirectory;
+    }
+
+    public static string ResolveBrollDirectory(string editingRoot, string project)
+    {
+        var projectDirectory = ResolveProjectDirectory(editingRoot, project);
         var broll = Path.Combine(projectDirectory, "BROLL");
         Directory.CreateDirectory(broll);
         return broll;
@@ -229,11 +235,16 @@ internal sealed class ClipCollisionDialog : Form
 
 internal static class MarkerClipboard
 {
-    public static void SetHtmlTemplate(string template, int id)
+    public static string Render(string template, int id)
     {
         if (string.IsNullOrWhiteSpace(template) || !template.Contains("{id}", StringComparison.Ordinal))
             throw new InvalidOperationException("The selected marker HTML template must contain the {id} placeholder.");
-        var html = template.Replace("{id}", id.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        return template.Replace("{id}", id.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+    }
+
+    public static void SetHtmlTemplate(string template, int id)
+    {
+        var html = Render(template, id);
         var data = new DataObject();
         data.SetData(DataFormats.UnicodeText, html);
         data.SetData(DataFormats.Text, html);
