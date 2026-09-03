@@ -6,6 +6,7 @@ namespace YouTubeSubs;
 
 internal sealed class MainForm : Form
 {
+    private const string InputPrompt = "Enter a YouTube URL or Video ID...";
     private readonly AppConfig _config;
     private readonly YoutubeService _service = new();
     private readonly TextBox _input = new() { Width = 390 };
@@ -121,6 +122,7 @@ internal sealed class MainForm : Form
         _analyzeTimer.Tick += async (_, _) => { _analyzeTimer.Stop(); await AnalyzeAsync(); };
         Shown += (_, _) => { _input.Focus(); ActivateFront(); };
         UpdateFormatState();
+        ShowInputPrompt();
     }
 
     public void ActivateFront()
@@ -135,6 +137,13 @@ internal sealed class MainForm : Form
     }
 
     private void UpdateFormatState() => _format.Enabled = _subtitles.Enabled && _subtitles.Checked;
+
+    private void ShowInputPrompt()
+    {
+        _status.Text = InputPrompt;
+        _status.LinkColor = SystemColors.GrayText;
+        _status.Links.Clear();
+    }
 
     private static Panel WrapTimeBox(TimeTextBox box)
     {
@@ -166,8 +175,8 @@ internal sealed class MainForm : Form
         _durationFull.Text = string.Empty;
         SetTimeValidity(_from, _fromHost, true);
         SetTimeValidity(_to, _toHost, true);
-        _status.Text = invalid ? "Invalid Video ID. Please try again..." : string.Empty;
-        _status.LinkColor = invalid ? Color.FromArgb(192, 0, 0) : Color.FromArgb(5, 99, 193);
+        _status.Text = invalid ? "Invalid Video ID. Please try again..." : InputPrompt;
+        _status.LinkColor = invalid ? Color.FromArgb(192, 0, 0) : SystemColors.GrayText;
         _status.Links.Clear();
     }
 
