@@ -98,15 +98,28 @@ internal static class UiLayoutFix
     {
         var stopwatch = Stopwatch.StartNew();
 
-        // The root table is AutoSize, so its own Margin participates in the form's
-        // preferred size. Give it the horizontal inset directly instead of relying
-        // on Form.Padding, which WinForms AutoSize did not preserve symmetrically.
         var rootTable = form.Controls.OfType<TableLayoutPanel>().FirstOrDefault();
         if (rootTable is not null)
         {
+            form.SuspendLayout();
+            form.Controls.Remove(rootTable);
             form.Padding = Padding.Empty;
-            rootTable.Margin = new Padding(14, 14, 14, 14);
+
+            rootTable.Margin = Padding.Empty;
             rootTable.Padding = Padding.Empty;
+
+            var shell = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Margin = Padding.Empty,
+                Padding = new Padding(14),
+            };
+            shell.Controls.Add(rootTable);
+            form.Controls.Add(shell);
+            form.ResumeLayout(true);
         }
 
         var checkboxes = Descendants(form).OfType<CheckBox>().ToArray();
