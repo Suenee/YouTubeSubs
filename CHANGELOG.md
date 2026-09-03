@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## 2.17 - 04.09.2026
+
+- Mirror the existing learned overall job progress to the Windows taskbar button so minimized downloads remain visible as a percentage/progress overlay.
+- Clear taskbar progress on cancellation, completion, and application close.
+- Close the project-media GUI automatically after a fully successful `--avid` or `--brollid` job once the media file is finalized and the final marker has been copied to Clipboard.
+- Keep the project-media window open on download errors, cancellation, or Clipboard failure so the problem remains visible and recoverable.
+- Show the complete resolved project directory name, including its leading `YYYYMMDD` date, in project mode.
+- Make the resolved project name and current media marker visually prominent.
+- Replace the plain project-media ID text with a clickable marker representation derived from the configured AV/BROLL HTML template.
+- Allow clicking the marker to copy the same configured HTML marker to Clipboard without starting a download.
+- Preserve version 2.16 as rollback branch `restore/2.16-before-taskbar-ui`.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.17.
+
 ## 2.16 - 04.09.2026
 
 - Add GUI project-media launch arguments `--avid=<id> --project="<name>"` and `--brollid=<id> --project="<name>"`.
