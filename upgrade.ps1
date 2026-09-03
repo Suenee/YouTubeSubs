@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 
-$UpgradeRevision = '2.14-runner-02'
+$UpgradeRevision = '2.14-runner-03'
 $ExpectedVersion = '2.14'
 $Branch = if ($env:YTSUBS_BRANCH) { $env:YTSUBS_BRANCH } else { 'devel' }
 $Repo = if ($env:YTSUBS_REPO_DIR) { $env:YTSUBS_REPO_DIR } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
@@ -25,12 +25,42 @@ function Resolve-DotNet { $command=Get-Command dotnet.exe -ErrorAction SilentlyC
 function Test-DotNet10 { param([string]$DotNet); if(-not $DotNet){return $false}; $r=Invoke-NativeCapture $DotNet @('--list-sdks'); if($r.ExitCode -ne 0){return $false}; return [bool]($r.Output | Where-Object { $_ -match '^10\.' } | Select-Object -First 1) }
 function Stop-RunningApplication { $target=Join-Path $Repo 'ytsubs.exe'; if(-not(Test-Path -LiteralPath $target)){return}; $full=[IO.Path]::GetFullPath($target); $matches=@(); Get-Process -Name 'ytsubs' -ErrorAction SilentlyContinue | ForEach-Object { try { if([string]::Equals([IO.Path]::GetFullPath($_.Path),$full,[StringComparison]::OrdinalIgnoreCase)){$matches+=$_} } catch{} }; if($matches.Count -eq 0){return}; $script:WasRunning=$true; Write-UpgradeLine 'YouTubeSubs is running; requesting shutdown before deployment.'; foreach($p in $matches){try{[void]$p.CloseMainWindow()}catch{}}; $deadline=[DateTime]::UtcNow.AddSeconds(5); do { Start-Sleep -Milliseconds 200; $alive=@($matches|Where-Object{try{-not $_.HasExited}catch{$false}}) } while($alive.Count -gt 0 -and [DateTime]::UtcNow -lt $deadline); if($alive.Count -gt 0){$script:HadWarning=$true; Write-UpgradeLine 'WARNING: Graceful shutdown timed out; forcing YouTubeSubs to stop.' Yellow; foreach($p in $alive){try{$p.Kill()}catch{}}; Start-Sleep -Milliseconds 300} }
 function Get-PeSubsystem { param([string]$Path); $bytes=[IO.File]::ReadAllBytes($Path); $pe=[BitConverter]::ToInt32($bytes,0x3c); return [BitConverter]::ToUInt16($bytes,$pe+92) }
-function Repair-BootstrapChanges { param([string]$GitPath); $status=Invoke-NativeCapture $GitPath @('-C',$Repo,'status','--porcelain','--untracked-files=no'); if($status.ExitCode -ne 0){throw 'Unable to inspect tracked local changes.'}; if($status.Output.Count -eq 0){return}; $changed=@(); foreach($line in $status.Output){if($line.Length -ge 4){$path=$line.Substring(3).Trim().Trim('"'); if(@('upgrade.cmd','upgrade.ps1') -contains $path){$changed+=$path}}}; if($changed.Count -eq 0){return}; $changed=@($changed|Sort-Object -Unique); Write-UpgradeLine ("Bootstrap file change detected: {0}" -f ($changed -join ', ')) Yellow; Invoke-Native $GitPath (@('-C',$Repo,'checkout','HEAD','--')+$changed) }
+function Repair-BootstrapChanges {
+    param([string]$GitPath)
+    $status=Invoke-NativeCapture $GitPath @('-C',$Repo,'status','--porcelain','--untracked-files=no')
+    if($status.ExitCode -ne 0){throw 'Unable to inspect tracked local changes.'}
+    if($status.Output.Count -eq 0){return}
+    $changed=@()
+    foreach($line in $status.Output){
+        if($line.Length -ge 4){
+            $path=$line.Substring(3).Trim().Trim('"')
+            if(@('upgrade.cmd','upgrade.ps1') -contains $path){$changed+=$path}
+        }
+    }
+    if($changed.Count -eq 0){return}
+    $changed=@($changed|Sort-Object -Unique)
+    Write-UpgradeLine ("Bootstrap file change detected: {0}" -f ($changed -join ', ')) Yellow
+    $restore = Invoke-NativeCapture $GitPath (@('-C',$Repo,'checkout','HEAD','--')+$changed)
+    if($restore.ExitCode -ne 0){throw 'Unable to restore updater bootstrap files from HEAD.'}
+    $verify=Invoke-NativeCapture $GitPath @('-C',$Repo,'status','--porcelain','--untracked-files=no')
+    if($verify.ExitCode -ne 0){throw 'Unable to re-check tracked local changes after bootstrap restore.'}
+    $left=@()
+    foreach($line in $verify.Output){
+        if($line.Length -ge 4){
+            $path=$line.Substring(3).Trim().Trim('"')
+            if(@('upgrade.cmd','upgrade.ps1') -contains $path){$left+=$line}
+        }
+    }
+    if($left.Count -gt 0){
+        $left|ForEach-Object{Write-UpgradeLine $_ Yellow}
+        throw 'Updater bootstrap files are still modified after automatic restore.'
+    }
+}
 
 try {
  Write-UpgradeLine '============================================================'; Write-UpgradeLine 'YouTubeSubs upgrade diagnostic log'; Write-UpgradeLine ("Upgrade revision: {0}" -f $UpgradeRevision); Write-UpgradeLine ("Started:          {0}" -f (Get-Date -Format 'dd.MM.yyyy HH:mm:ss.fff')); Write-UpgradeLine ("Repository:       {0}" -f $Repo); Write-UpgradeLine ("Branch:           {0}" -f $Branch); Write-UpgradeLine '============================================================'
  Set-Location -LiteralPath $Repo; $gc=Get-Command git.exe -ErrorAction SilentlyContinue; if(-not $gc){throw 'Git was not found in PATH.'}; $git=$gc.Source
- Set-Phase 'REPOSITORY'; $inside=Invoke-NativeCapture $git @('-C',$Repo,'rev-parse','--is-inside-work-tree'); if($inside.ExitCode -ne 0 -or -not($inside.Output -contains 'true')){throw 'The selected directory is not a Git working tree.'}; $origin=Invoke-NativeCapture $git @('-C',$Repo,'remote','get-url','origin'); if($origin.ExitCode -ne 0){throw 'Git remote origin is missing.'}; Write-UpgradeLine ("Origin: {0}" -f $origin.Output[0]); Repair-BootstrapChanges $git; $status=Invoke-NativeCapture $git @('-C',$Repo,'status','--porcelain','--untracked-files=no'); if($status.Output.Count -gt 0){$status.Output|ForEach-Object{Write-UpgradeLine $_ Yellow}; throw 'Tracked local changes detected outside updater bootstrap files.'}; Invoke-Native $git @('-C',$Repo,'fetch','origin',$Branch); $local=Invoke-NativeCapture $git @('-C',$Repo,'rev-parse','HEAD'); $remote=Invoke-NativeCapture $git @('-C',$Repo,'rev-parse',("origin/{0}" -f $Branch)); $base=Invoke-NativeCapture $git @('-C',$Repo,'merge-base','HEAD',("origin/{0}" -f $Branch)); if($local.Output[0] -ne $remote.Output[0]){if($local.Output[0] -ne $base.Output[0]){throw 'Local branch diverged from remote.'}; Invoke-Native $git @('-C',$Repo,'merge','--ff-only',("origin/{0}" -f $Branch))}; $head=Invoke-NativeCapture $git @('-C',$Repo,'rev-parse','HEAD'); Write-UpgradeLine ("Build commit: {0}" -f $head.Output[0])
+ Set-Phase 'REPOSITORY'; $inside=Invoke-NativeCapture $git @('-C',$Repo,'rev-parse','--is-inside-work-tree'); if($inside.ExitCode -ne 0 -or -not($inside.Output -contains 'true')){throw 'The selected directory is not a Git working tree.'}; $origin=Invoke-NativeCapture $git @('-C',$Repo,'remote','get-url','origin'); if($origin.ExitCode -ne 0){throw 'Git remote origin is missing.'}; Write-UpgradeLine ("Origin: {0}" -f $origin.Output[0]); Repair-BootstrapChanges $git; $status=Invoke-NativeCapture $git @('-C',$Repo,'status','--porcelain','--untracked-files=no'); if($status.ExitCode -ne 0){throw 'Unable to inspect tracked local changes after bootstrap restore.'}; if($status.Output.Count -gt 0){$status.Output|ForEach-Object{Write-UpgradeLine $_ Yellow}; throw 'Tracked local changes detected outside updater bootstrap files.'}; Invoke-Native $git @('-C',$Repo,'fetch','origin',$Branch); $local=Invoke-NativeCapture $git @('-C',$Repo,'rev-parse','HEAD'); $remote=Invoke-NativeCapture $git @('-C',$Repo,'rev-parse',("origin/{0}" -f $Branch)); $base=Invoke-NativeCapture $git @('-C',$Repo,'merge-base','HEAD',("origin/{0}" -f $Branch)); if($local.Output[0] -ne $remote.Output[0]){if($local.Output[0] -ne $base.Output[0]){throw 'Local branch diverged from remote.'}; Invoke-Native $git @('-C',$Repo,'merge','--ff-only',("origin/{0}" -f $Branch))}; $head=Invoke-NativeCapture $git @('-C',$Repo,'rev-parse','HEAD'); Write-UpgradeLine ("Build commit: {0}" -f $head.Output[0])
  Set-Phase 'DEPENDENCIES'; $dotnet=Resolve-DotNet; if(-not(Test-DotNet10 $dotnet)){ $winget=Get-Command winget.exe -ErrorAction SilentlyContinue; if(-not $winget){throw '.NET 10 SDK is missing and winget is unavailable.'}; Invoke-Native $winget.Source @('install','--id','Microsoft.DotNet.SDK.10','--exact','--silent','--accept-package-agreements','--accept-source-agreements'); $dotnet=Resolve-DotNet; if(-not(Test-DotNet10 $dotnet)){throw '.NET 10 SDK is still unavailable.'} }; $dv=Invoke-NativeCapture $dotnet @('--version'); Write-UpgradeLine ("Build SDK: .NET {0}" -f $dv.Output[0]); $tools=Join-Path $Repo 'tools-update.ps1'; if(-not(Test-Path $tools)){throw 'tools-update.ps1 is missing.'}; Invoke-Native (Join-Path $PSHOME 'powershell.exe') @('-NoProfile','-ExecutionPolicy','Bypass','-File',$tools)
  Set-Phase 'MIGRATION'; foreach($legacy in @('__pycache__','.venv','.pytest_cache')){$p=Join-Path $Repo $legacy;if(Test-Path $p){Remove-Item $p -Recurse -Force}}
  Set-Phase 'CONFIGURATION'; $encoded=Join-Path $Repo 'assets\ytsubs.ico.b64'; $icon=Join-Path $Repo 'assets\ytsubs.ico'; $raw=[Convert]::FromBase64String((Get-Content $encoded -Raw)); [IO.File]::WriteAllBytes($icon,$raw)
