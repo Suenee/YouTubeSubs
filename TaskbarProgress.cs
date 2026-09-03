@@ -8,6 +8,7 @@ internal static class TaskbarProgress
     private const uint Indeterminate = 0x1;
     private const uint Normal = 0x2;
     private const uint Error = 0x4;
+    private static readonly Guid TaskbarListClsid = new("56FDF344-FD6D-11d0-958A-006097C9A090");
 
     private static readonly object Sync = new();
     private static ITaskbarList3? _taskbar;
@@ -49,16 +50,15 @@ internal static class TaskbarProgress
         lock (Sync)
         {
             if (_taskbar is not null) return _taskbar;
-            _taskbar = (ITaskbarList3)new CTaskbarList();
+            var type = Type.GetTypeFromCLSID(TaskbarListClsid, throwOnError: true)
+                ?? throw new InvalidOperationException("Windows taskbar COM class is unavailable.");
+            var instance = Activator.CreateInstance(type)
+                ?? throw new InvalidOperationException("Windows taskbar COM class could not be created.");
+            _taskbar = (ITaskbarList3)instance;
             _taskbar.HrInit();
             return _taskbar;
         }
     }
-
-    [ComImport]
-    [Guid("56FDF344-FD6D-11d0-958A-006097C9A090")]
-    [ClassInterface(ClassInterfaceType.None)]
-    private sealed class CTaskbarList { }
 
     [ComImport]
     [Guid("EA1AFB91-9E28-4B86-90E9-9E9F8A5EEA84")]
