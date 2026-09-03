@@ -10,6 +10,10 @@ internal sealed class AppConfig
     public int Samples { get; set; }
     public string LastFormat { get; set; } = "srt";
     public string LastOutputDirectory { get; set; } = "";
+    public string EditingRoot { get; set; } = @"N:\WORK\Sueneé Universe\EDITING";
+    public int ClipNameMaxWords { get; set; } = 4;
+    public string AvMarkerHtml { get; set; } = "VLC AV {id}";
+    public string BrollMarkerHtml { get; set; } = "VLC LOOP {id}";
     public Dictionary<string, double> PhaseSeconds { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
         ["metadata"] = 0.8, ["transcripts"] = 1.0, ["subtitle-download"] = 0.8, ["subtitle-format"] = 0.1,
@@ -28,6 +32,10 @@ internal sealed class AppConfig
     {
         Logging = Logging.Trim().ToLowerInvariant(); if (Logging is not ("off" or "single" or "all")) Logging = "single";
         if (LastFormat is not ("srt" or "sub" or "txt" or "vtt")) LastFormat = "srt";
+        EditingRoot = EditingRoot.Trim();
+        ClipNameMaxWords = Math.Clamp(ClipNameMaxWords, 1, 12);
+        if (string.IsNullOrWhiteSpace(AvMarkerHtml) || !AvMarkerHtml.Contains("{id}", StringComparison.Ordinal)) AvMarkerHtml = "VLC AV {id}";
+        if (string.IsNullOrWhiteSpace(BrollMarkerHtml) || !BrollMarkerHtml.Contains("{id}", StringComparison.Ordinal)) BrollMarkerHtml = "VLC LOOP {id}";
         var defaults = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
         {
             ["metadata"] = 0.8, ["transcripts"] = 1.0, ["subtitle-download"] = 0.8, ["subtitle-format"] = 0.1,
