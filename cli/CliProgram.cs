@@ -5,7 +5,7 @@ namespace YouTubeSubs;
 
 internal static class CliProgram
 {
-    private const string Version = "2.14";
+    private const string Version = "2.15";
     private static int Main(string[] args) { if (args.Length == 0) return LaunchGui(); var config = AppConfig.Load(); AppLog.Initialize(config.Logging); AppLog.Write($"start version={Version} mode=cli args={string.Join(' ', args)}"); return RunCliAsync(args).GetAwaiter().GetResult(); }
     private static int LaunchGui()
     {
