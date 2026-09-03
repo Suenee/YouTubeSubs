@@ -80,7 +80,8 @@ In project mode:
 - The application searches the configured editing root for exactly one `YYYYMMDD Project` directory with the requested project name. If none exists, today's directory is created. Multiple dated directories for the same project name are treated as an error.
 - The resolved `YYYYMMDD Project` directory name is shown in full in the GUI.
 - Output is stored below `BROLL` as `NNN - short clip name.mp4`.
-- If the requested ID already exists, the user gets `Replace`, `Move to XX`, or `Cancel`. `XX` is the first free ID after the requested number.
+- If the requested ID already exists, the marker is shown in red and the normal Download button is replaced directly in the main window by `Replace` and `Move to XX`; `XX` is the first free ID above the requested number. No separate collision dialog is required.
+- The selected ID is checked again immediately before download so a new external collision cannot be overwritten silently.
 - The current marker is shown prominently as a clickable link. Clicking it copies the configured marker to Clipboard without downloading.
 - After a successful download, the marker template for the selected mode is rendered with the final ID and copied to Clipboard.
 - After both media finalization and Clipboard update succeed, project mode closes automatically. Errors, cancellation, or Clipboard failure leave the window open.
