@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented here.
 
+## 2.16 - 04.09.2026
+
+- Add GUI project-media launch arguments `--avid=<id> --project="<name>"` and `--brollid=<id> --project="<name>"`.
+- Define `--avid` as one MP4 containing video and audio, and `--brollid` as a silent video-only MP4; subtitle, language, and output selectors are locked in project mode.
+- Add an editable Clip name field in project mode and derive a short initial suggestion from the YouTube title, limited by the configurable `clip_name_max_words` value (four words by default).
+- Resolve project output below configurable `editing_root` by exact project name: reuse the single `YYYYMMDD Project` directory when present, create today's directory when absent, and fail explicitly if duplicate dated directories exist for the same project name.
+- Create/use the project's `BROLL` directory automatically and save numbered media as `NNN - short clip name.mp4` without opening a Save As or folder-selection dialog.
+- Detect numbered clip collisions and offer exactly `Replace`, `Move to XX`, or `Cancel`; `XX` is the first free ID after the requested ID.
+- Preserve the existing clip until a replacement download succeeds by downloading project media to a temporary BROLL file and finalizing it only after successful processing.
+- Add configurable `av_marker_html` and `broll_marker_html` templates using the `{id}` placeholder. After a successful project-media download, render the template with the final ID and publish it to Clipboard as both text and HTML data.
+- Forward project-media launch arguments to an already-running GUI instance through the existing single-instance IPC channel instead of dropping the requested project and ID.
+- Add project-media job/output/Clipboard diagnostics to the canonical application log.
+- Prevent `ytsubs-cli --version` validation calls from initializing `single` logging and truncating the current application log.
+- Restore robust updater safeguards that were accidentally simplified in 2.15: bootstrap CRLF repair, graceful-stop timeout with forced fallback, automatic .NET 10 SDK installation through winget, Python-artifact migration cleanup, legacy-log cleanup, dependency validation, and verified repository synchronization.
+- Preserve the exact 2.15 development state on branch `restore/2.15-before-project-mode` as the rollback point for this iteration.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.16.
+
+## 2.15 - 03.09.2026
+
+- Standardize application log lines on real wall-clock timestamps in `DD.MM.YYYY HH:mm:ss.fff` format.
+- Add lifecycle logging for progress-dialog phases and elapsed durations.
+- Keep the canonical repository-local application log at `logs/YouTubeSubs.log`.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.15.
+
 ## 2.14 - 03.09.2026
 
 - Replace the insufficient direct `--force-keyframes-at-cuts` partial-video path with a two-stage exact-cut workflow.
@@ -79,7 +103,7 @@ All notable changes to this project are documented here.
 
 - Fix the GUI build after moving the dedicated CLI sources into `cli/` in 2.09.
 - Explicitly exclude `cli\**\*.cs` from the root WinForms project's default compile glob so `Program.cs` remains the GUI project's only entry point.
-- Keep the CLI project physically isolated in `cli/` with its own intermediate build directories and shared application logic linked from the root.
+- Keep the CLI project physically isolated in `cli/` with its own intermediate build directories and apphosts.
 - Preserve the strict publish validation requiring GUI subsystem 2 and CLI subsystem 3 before installation.
 - Bump both GUI and CLI assemblies and upgrade validation to version 2.10.
 
