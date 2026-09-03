@@ -97,6 +97,18 @@ internal static class UiLayoutFix
     public static void Apply(Form form)
     {
         var stopwatch = Stopwatch.StartNew();
+
+        // Keep the visible content inset symmetrical. WinForms child margins were
+        // effectively consuming the right-side space while the left edge sat too
+        // close to the client border, so normalize the root table explicitly.
+        var rootTable = form.Controls.OfType<TableLayoutPanel>().FirstOrDefault();
+        if (rootTable is not null)
+        {
+            rootTable.Margin = Padding.Empty;
+            rootTable.Padding = Padding.Empty;
+            form.Padding = new Padding(14, form.Padding.Top, 14, form.Padding.Bottom);
+        }
+
         var checkboxes = Descendants(form).OfType<CheckBox>().ToArray();
         if (checkboxes.Length >= 3)
         {
