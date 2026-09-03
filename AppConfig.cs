@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 
 namespace YouTubeSubs;
@@ -58,6 +60,7 @@ internal sealed class AppConfig
 
     private void Normalize()
     {
+        Logging = Logging.Trim().ToLowerInvariant();
         if (Logging is not ("off" or "single" or "all")) Logging = "off";
         if (LastFormat is not ("srt" or "sub" or "txt" or "vtt")) LastFormat = "srt";
 
@@ -91,23 +94,54 @@ internal static class AppLog
 {
     private static string _mode = "off";
     private static readonly object Sync = new();
-    private static string LogPath => Path.Combine(AppConfig.AppDirectory, "ytsubs.log");
+    private static readonly Stopwatch Runtime = Stopwatch.StartNew();
+    private static readonly UTF8Encoding Utf8 = new(false);
+    private static string LogDirectory => Path.Combine(AppContext.BaseDirectory, "logs");
+    public static string LogPath => Path.Combine(LogDirectory, "YouTubeSubs.log");
+    public static bool Enabled => _mode != "off";
 
     public static void Initialize(string mode)
     {
         _mode = mode is "single" or "all" ? mode : "off";
-        if (_mode == "single")
+        if (_mode == "off") return;
+
+        try
         {
-            try { File.WriteAllText(LogPath, string.Empty); } catch { }
+            Directory.CreateDirectory(LogDirectory);
+            if (_mode == "single") File.WriteAllText(LogPath, string.Empty, Utf8);
+            WriteRaw("============================================================");
+            WriteRaw($"SESSION START {DateTime.Now:dd.MM.yyyy HH:mm:ss.fff} pid={Environment.ProcessId} mode={_mode}");
+            WriteRaw($"Executable: {Environment.ProcessPath}");
+            WriteRaw($"Working directory: {Environment.CurrentDirectory}");
+            WriteRaw("============================================================");
+        }
+        catch
+        {
+            _mode = "off";
         }
     }
 
     public static void Write(string message)
     {
-        if (_mode == "off") return;
+        if (!Enabled) return;
+        WriteRaw($"+{Runtime.Elapsed.TotalMilliseconds,10:0.0} ms  {message}");
+    }
+
+    public static void Exception(string context, Exception exception) =>
+        Write($"ERROR {context}: {exception.GetType().Name}: {exception.Message}{Environment.NewLine}{exception.StackTrace}");
+
+    public static void SessionEnd(string reason)
+    {
+        if (!Enabled) return;
+        Write($"SESSION END reason={reason} runtime={Runtime.Elapsed}");
+        WriteRaw(string.Empty);
+    }
+
+    private static void WriteRaw(string message)
+    {
         lock (Sync)
         {
-            try { File.AppendAllText(LogPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {message}{Environment.NewLine}"); } catch { }
+            try { File.AppendAllText(LogPath, message + Environment.NewLine, Utf8); } catch { }
         }
     }
 }
