@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## 2.18 - 04.09.2026
+
+- Fix the Windows taskbar progress COM activation introduced in 2.17 by creating the TaskbarList COM object through its CLSID and then querying the `ITaskbarList3` interface.
+- Remove the nullable `ControlAdded` warning in `UiDiagnostics` by guarding the event control before recursive attachment.
+- Keep the 2.17 taskbar progress, project auto-close, full project label, and clickable marker behavior unchanged.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.18.
+
 ## 2.17 - 04.09.2026
 
 - Mirror the existing learned overall job progress to the Windows taskbar button so minimized downloads remain visible as a percentage/progress overlay.
