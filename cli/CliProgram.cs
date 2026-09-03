@@ -5,8 +5,16 @@ namespace YouTubeSubs;
 
 internal static class CliProgram
 {
-    private const string Version = "2.15";
-    private static int Main(string[] args) { if (args.Length == 0) return LaunchGui(); var config = AppConfig.Load(); AppLog.Initialize(config.Logging); AppLog.Write($"start version={Version} mode=cli args={string.Join(' ', args)}"); return RunCliAsync(args).GetAwaiter().GetResult(); }
+    private const string Version = "2.16";
+    private static int Main(string[] args)
+    {
+        if (args.Length == 0) return LaunchGui();
+        if (args.Length == 1 && args[0] == "--version") { Console.Out.WriteLine($"ytsubs-cli {Version}"); return 0; }
+        var config = AppConfig.Load();
+        AppLog.Initialize(config.Logging);
+        AppLog.Write("CLI", $"start version={Version} args={string.Join(' ', args)}");
+        return RunCliAsync(args).GetAwaiter().GetResult();
+    }
     private static int LaunchGui()
     {
         try { var guiPath = Path.Combine(AppContext.BaseDirectory, "ytsubs.exe"); if (!File.Exists(guiPath)) { Console.Error.WriteLine("ytsubs-cli: ytsubs.exe was not found next to ytsubs-cli.exe."); return 4; } Process.Start(new ProcessStartInfo { FileName = guiPath, UseShellExecute = true, WorkingDirectory = AppContext.BaseDirectory }); return 0; }
@@ -16,7 +24,7 @@ internal static class CliProgram
     {
         try
         {
-            Console.OutputEncoding = Encoding.UTF8; if (args.Length == 1 && args[0] == "--version") { Console.Out.WriteLine($"ytsubs-cli {Version}"); return 0; }
+            Console.OutputEncoding = Encoding.UTF8;
             string? video = null; string format = "txt"; string? lang = null; string? output = null;
             for (var i = 0; i < args.Length; i++)
             {
