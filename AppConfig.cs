@@ -12,20 +12,12 @@ internal sealed class AppConfig
     public string LastOutputDirectory { get; set; } = "";
     public Dictionary<string, double> PhaseSeconds { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["metadata"] = 0.8,
-        ["transcripts"] = 1.0,
-        ["subtitle-download"] = 0.8,
-        ["subtitle-format"] = 0.1,
-        ["subtitle-save"] = 0.1,
-        ["video-download"] = 10.0,
-        ["video-postprocess"] = 4.0,
-        ["audio-download"] = 5.0,
-        ["audio-convert"] = 3.0,
+        ["metadata"] = 0.8, ["transcripts"] = 1.0, ["subtitle-download"] = 0.8,
+        ["subtitle-format"] = 0.1, ["subtitle-save"] = 0.1, ["video-download"] = 10.0,
+        ["video-postprocess"] = 4.0, ["audio-download"] = 5.0, ["audio-convert"] = 3.0,
         ["media-finalize"] = 0.5,
     };
 
-    // During development all persistent application state lives next to the
-    // repository executable. Temporary processing data may still use %TEMP%.
     public static string AppDirectory
     {
         get
@@ -47,10 +39,7 @@ internal sealed class AppConfig
             config.Normalize();
             return config;
         }
-        catch
-        {
-            return new AppConfig();
-        }
+        catch { return new AppConfig(); }
     }
 
     public void Save()
@@ -64,31 +53,19 @@ internal sealed class AppConfig
         Logging = Logging.Trim().ToLowerInvariant();
         if (Logging is not ("off" or "single" or "all")) Logging = "single";
         if (LastFormat is not ("srt" or "sub" or "txt" or "vtt")) LastFormat = "srt";
-
         var defaults = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
         {
-            ["metadata"] = 0.8,
-            ["transcripts"] = 1.0,
-            ["subtitle-download"] = 0.8,
-            ["subtitle-format"] = 0.1,
-            ["subtitle-save"] = 0.1,
-            ["video-download"] = 10.0,
-            ["video-postprocess"] = 4.0,
-            ["audio-download"] = 5.0,
-            ["audio-convert"] = 3.0,
+            ["metadata"] = 0.8, ["transcripts"] = 1.0, ["subtitle-download"] = 0.8,
+            ["subtitle-format"] = 0.1, ["subtitle-save"] = 0.1, ["video-download"] = 10.0,
+            ["video-postprocess"] = 4.0, ["audio-download"] = 5.0, ["audio-convert"] = 3.0,
             ["media-finalize"] = 0.5,
         };
-
         foreach (var item in defaults) PhaseSeconds.TryAdd(item.Key, item.Value);
         foreach (var key in PhaseSeconds.Keys.ToList())
             if (!double.IsFinite(PhaseSeconds[key]) || PhaseSeconds[key] <= 0) PhaseSeconds[key] = defaults.GetValueOrDefault(key, 0.5);
     }
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-    };
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
 }
 
 internal static class AppLog
@@ -105,38 +82,30 @@ internal static class AppLog
     {
         _mode = mode is "single" or "all" ? mode : "off";
         if (_mode == "off") return;
-
         try
         {
             Directory.CreateDirectory(LogDirectory);
             if (_mode == "single") File.WriteAllText(LogPath, string.Empty, Utf8);
-            WriteRaw("============================================================");
-            WriteRaw($"SESSION START {DateTime.Now:dd.MM.yyyy HH:mm:ss.fff} pid={Environment.ProcessId} mode={_mode}");
-            WriteRaw($"Executable: {Environment.ProcessPath}");
-            WriteRaw($"Working directory: {Environment.CurrentDirectory}");
-            WriteRaw("============================================================");
+            Write("SESSION START", $"version={Program.Version} pid={Environment.ProcessId} mode={_mode}");
+            Write("SESSION", $"executable={Environment.ProcessPath}");
+            Write("SESSION", $"working_directory={Environment.CurrentDirectory}");
         }
-        catch
-        {
-            _mode = "off";
-        }
+        catch { _mode = "off"; }
     }
 
-    public static void Write(string message)
+    public static void Write(string message) => Write("INFO", message);
+
+    public static void Write(string category, string message)
     {
         if (!Enabled) return;
-        WriteRaw($"+{Runtime.Elapsed.TotalMilliseconds,10:0.0} ms  {message}");
+        WriteRaw($"{DateTime.Now:dd.MM.yyyy HH:mm:ss.fff} | {category,-13} | {message}");
     }
 
     public static void Exception(string context, Exception exception) =>
-        Write($"ERROR {context}: {exception.GetType().Name}: {exception.Message}{Environment.NewLine}{exception.StackTrace}");
+        Write("ERROR", $"{context}: {exception.GetType().Name}: {exception.Message} | {exception.StackTrace?.Replace(Environment.NewLine, " ")}");
 
-    public static void SessionEnd(string reason)
-    {
-        if (!Enabled) return;
-        Write($"SESSION END reason={reason} runtime={Runtime.Elapsed}");
-        WriteRaw(string.Empty);
-    }
+    public static void SessionEnd(string reason) =>
+        Write("SESSION END", $"reason={reason} runtime={Runtime.Elapsed}");
 
     private static void WriteRaw(string message)
     {
