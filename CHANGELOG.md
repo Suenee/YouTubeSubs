@@ -14,6 +14,7 @@ All notable changes to this project are documented here.
 - Keep full validation of yt-dlp, FFmpeg, and ffprobe after every dependency check even when no download is required.
 - Add project-standard application logging modes `off`, `single`, and `all` using the single canonical `logs/YouTubeSubs.log` file. `single` truncates the file for each run; `all` appends subsequent sessions to the same file.
 - Make `single` the default logging mode for new configurations.
+- Keep persistent development state inside the repository: configuration now lives in `config/config.json`, while application and updater logs remain under `logs/`; only genuinely temporary processing data may use the system TEMP directory.
 - Add high-resolution startup timing and application/UI event diagnostics so slow startup and runtime behavior can be measured instead of guessed.
 - Move completed updater diagnostics to `logs/upgrade.log` and force UTF-8 console output to prevent localized .NET/MSBuild text from being mojibake in CMD.
 - Include the application version in final updater SUCCESS, WARNING, and FAILED status lines.
