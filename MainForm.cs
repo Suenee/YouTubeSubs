@@ -24,6 +24,9 @@ internal sealed class MainForm : Form
     private readonly Label _durationFull = new() { AutoSize = true, Margin = new Padding(0, 3, 0, 0) };
     private readonly LinkLabel _status = new() { AutoSize = false, Width = 390, Height = 40, TextAlign = ContentAlignment.MiddleCenter };
     private readonly Button _download = new() { Text = "Download", AutoSize = true, Enabled = false };
+    private readonly Button _replace = new() { Text = "Replace", AutoSize = true, Visible = false };
+    private readonly Button _move = new() { Text = "Move", AutoSize = true, Visible = false };
+    private readonly Button _cancel = new() { Text = "Cancel", AutoSize = true };
     private readonly System.Windows.Forms.Timer _analyzeTimer = new() { Interval = 500 };
     private readonly Dictionary<string, string> _languageMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly TableLayoutPanel _projectPanel;
@@ -35,6 +38,8 @@ internal sealed class MainForm : Form
     private bool _busy;
     private bool _normalizingRange;
     private bool _audioSuggestionHandled;
+    private bool _replaceRequested;
+    private int? _moveTargetId;
 
     public MainForm(AppConfig config, ProjectLaunchOptions? launch = null)
     {
@@ -111,8 +116,9 @@ internal sealed class MainForm : Form
         table.Controls.Add(_status, 0, 7);
         var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Anchor = AnchorStyles.Right };
         buttons.Controls.Add(_download);
-        var cancel = new Button { Text = "Cancel", AutoSize = true };
-        buttons.Controls.Add(cancel);
+        buttons.Controls.Add(_replace);
+        buttons.Controls.Add(_move);
+        buttons.Controls.Add(_cancel);
         table.SetColumnSpan(buttons, 2);
         table.Controls.Add(buttons, 0, 8);
         Controls.Add(table);
@@ -120,7 +126,9 @@ internal sealed class MainForm : Form
         _input.TextChanged += (_, _) => ScheduleAnalysis();
         _format.SelectedIndexChanged += (_, _) => SaveFormat();
         _download.Click += async (_, _) => await DownloadAsync();
-        cancel.Click += (_, _) => Close();
+        _replace.Click += async (_, _) => { _replaceRequested = true; await DownloadAsync(); };
+        _move.Click += async (_, _) => await MoveToFreeIdAndDownloadAsync();
+        _cancel.Click += (_, _) => Close();
         _projectMarker.LinkClicked += (_, _) => CopyCurrentProjectMarker();
         _subtitles.CheckedChanged += (_, _) => { UpdateFormatState(); UpdateDownloadState(); };
         _video.CheckedChanged += (_, _) =>
@@ -169,6 +177,8 @@ internal sealed class MainForm : Form
         }
 
         _projectLaunch = launch;
+        _replaceRequested = false;
+        _moveTargetId = null;
         _audioSuggestionHandled = true;
         _analyzeTimer.Stop();
         _input.Clear();
@@ -185,6 +195,9 @@ internal sealed class MainForm : Form
         if (_projectLaunch is null)
         {
             _projectPanel.Visible = false;
+            _download.Visible = true;
+            _replace.Visible = false;
+            _move.Visible = false;
             return;
         }
 
@@ -208,6 +221,7 @@ internal sealed class MainForm : Form
         _audio.Enabled = false;
         _language.Enabled = false;
         _format.Enabled = false;
+        RefreshProjectCollisionState();
         UpdateDownloadState();
     }
 
@@ -225,6 +239,59 @@ internal sealed class MainForm : Form
         {
             _projectMarker.Text = $"{_projectLaunch.ModeLabel} {_projectLaunch.RequestedId}";
         }
+    }
+
+    private void RefreshProjectCollisionState()
+    {
+        if (_projectLaunch is null)
+        {
+            _download.Visible = true;
+            _replace.Visible = false;
+            _move.Visible = false;
+            _projectMarker.LinkColor = Color.FromArgb(5, 99, 193);
+            _moveTargetId = null;
+            return;
+        }
+
+        try
+        {
+            var brollDirectory = ProjectStorage.ResolveBrollDirectory(_config.EditingRoot, _projectLaunch.Project);
+            var existing = ProjectStorage.FindClipsById(brollDirectory, _projectLaunch.RequestedId);
+            if (existing.Count == 0)
+            {
+                _download.Visible = true;
+                _replace.Visible = false;
+                _move.Visible = false;
+                _projectMarker.LinkColor = Color.FromArgb(5, 99, 193);
+                _moveTargetId = null;
+                return;
+            }
+
+            _moveTargetId = ProjectStorage.FindNextFreeId(brollDirectory, _projectLaunch.RequestedId);
+            _projectMarker.LinkColor = Color.FromArgb(192, 0, 0);
+            _download.Visible = false;
+            _replace.Visible = true;
+            _move.Visible = true;
+            _move.Text = $"Move to {_moveTargetId.Value}";
+            AppLog.Write("PROJECT", $"collision id={_projectLaunch.RequestedId} move_to={_moveTargetId.Value}");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Exception("project collision check", ex);
+            _download.Visible = true;
+            _replace.Visible = false;
+            _move.Visible = false;
+            _moveTargetId = null;
+        }
+    }
+
+    private async Task MoveToFreeIdAndDownloadAsync()
+    {
+        if (_projectLaunch is null || !_moveTargetId.HasValue || _busy) return;
+        _projectLaunch = _projectLaunch with { RequestedId = _moveTargetId.Value };
+        _replaceRequested = false;
+        ApplyProjectModeState();
+        await DownloadAsync();
     }
 
     private void CopyCurrentProjectMarker()
@@ -278,6 +345,8 @@ internal sealed class MainForm : Form
         _language.Items.Add("Auto");
         _language.SelectedIndex = 0;
         _download.Enabled = false;
+        _replace.Enabled = false;
+        _move.Enabled = false;
         _durationClip.Text = string.Empty;
         _durationFull.Text = string.Empty;
         SetTimeValidity(_from, _fromHost, true);
@@ -365,6 +434,8 @@ internal sealed class MainForm : Form
         if (_info is null || _busy)
         {
             _download.Enabled = false;
+            _replace.Enabled = false;
+            _move.Enabled = false;
             return;
         }
 
@@ -374,7 +445,10 @@ internal sealed class MainForm : Form
         SetTimeValidity(_from, _fromHost, !invalidFrom && durationOk);
         SetTimeValidity(_to, _toHost, !invalidTo && durationOk);
         UpdateDurationIndicator(valid ? start : TimeSpan.Zero, valid ? end : _info.Duration, valid);
-        _download.Enabled = any && durationOk;
+        var enabled = any && durationOk;
+        _download.Enabled = enabled;
+        _replace.Enabled = enabled;
+        _move.Enabled = enabled;
     }
 
     private void UpdateDurationIndicator(TimeSpan start, TimeSpan end, bool valid)
@@ -544,15 +618,12 @@ internal sealed class MainForm : Form
 
         var actualId = launch.RequestedId;
         var existing = ProjectStorage.FindClipsById(brollDirectory, actualId);
-        var replaceExisting = false;
-        if (existing.Count > 0)
+        var replaceExisting = _replaceRequested && existing.Count > 0;
+        _replaceRequested = false;
+        if (existing.Count > 0 && !replaceExisting)
         {
-            var freeId = ProjectStorage.FindNextFreeId(brollDirectory, actualId);
-            using var collision = new ClipCollisionDialog(this, actualId, freeId);
-            collision.ShowDialog(this);
-            if (collision.Choice == ClipCollisionChoice.Cancel) return;
-            if (collision.Choice == ClipCollisionChoice.Move) actualId = freeId;
-            else replaceExisting = true;
+            RefreshProjectCollisionState();
+            return;
         }
 
         var clipName = ProjectStorage.SanitizeClipName(_clipName.Text, _config.ClipNameMaxWords);
@@ -566,7 +637,7 @@ internal sealed class MainForm : Form
         AppLog.Write("JOB", $"video={_info.VideoId} range={FormatTime(start)}-{FormatTime(end)} audio={includeAudio} target={finalPath}");
 
         _busy = true;
-        _download.Enabled = false;
+        UpdateDownloadState();
         using var dialog = new ProgressDialog(this, "Downloading", new[] { "video-download", "video-postprocess", "media-finalize" }, _config);
         Exception? error = null;
         dialog.Shown += async (_, _) =>
@@ -606,6 +677,7 @@ internal sealed class MainForm : Form
         if (dialog.Cancellation.IsCancellationRequested)
         {
             AppLog.Write("JOB END", $"status=CANCELLED elapsed={job.Elapsed.TotalSeconds:0.00}s");
+            RefreshProjectCollisionState();
             UpdateDownloadState();
             return;
         }
@@ -613,6 +685,7 @@ internal sealed class MainForm : Form
         {
             AppLog.Exception("project media download", error);
             AppLog.Write("JOB END", $"status=FAILED elapsed={job.Elapsed.TotalSeconds:0.00}s");
+            RefreshProjectCollisionState();
             UpdateDownloadState();
             MessageBox.Show(this, error.Message, "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
@@ -634,18 +707,13 @@ internal sealed class MainForm : Form
             MessageBox.Show(this, $"The media file was saved, but the marker could not be copied to Clipboard.\n\n{ex.Message}", "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
 
-        if (actualId != launch.RequestedId)
-        {
-            _projectLaunch = launch with { RequestedId = actualId };
-            ApplyProjectModeState();
-        }
-
         if (clipboardOk)
         {
             Close();
             return;
         }
 
+        RefreshProjectCollisionState();
         UpdateDownloadState();
         ActivateFront();
     }
@@ -707,7 +775,7 @@ internal sealed class MainForm : Form
         _config.LastOutputDirectory = directory;
         _config.Save();
         _busy = true;
-        _download.Enabled = false;
+        UpdateDownloadState();
 
         var phases = new List<string>();
         if (wantSubtitles) phases.AddRange(new[] { "subtitle-download", "subtitle-format", "subtitle-save" });
