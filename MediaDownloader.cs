@@ -9,11 +9,12 @@ internal static class MediaDownloader
     public static string ToolsDirectory => Path.Combine(AppContext.BaseDirectory, "tools");
     public static string YtDlpPath => Path.Combine(ToolsDirectory, "yt-dlp.exe");
     public static string FfmpegPath => Path.Combine(ToolsDirectory, "ffmpeg.exe");
+    public static string FfprobePath => Path.Combine(ToolsDirectory, "ffprobe.exe");
 
     public static void ValidateTools()
     {
-        if (!File.Exists(YtDlpPath) || !File.Exists(FfmpegPath))
-            throw new InvalidOperationException("Media tools are missing. Run upgrade.cmd to install/update yt-dlp and FFmpeg.");
+        if (!File.Exists(YtDlpPath) || !File.Exists(FfmpegPath) || !File.Exists(FfprobePath))
+            throw new InvalidOperationException("Media tools are missing. Run upgrade.cmd to install/update yt-dlp, FFmpeg, and ffprobe.");
     }
 
     public static async Task DownloadVideoAsync(
@@ -50,6 +51,8 @@ internal static class MediaDownloader
 
         try
         {
+            // Stage 1 deliberately creates a decodable source section with preroll. The
+            // requested visible cut is not trusted to stream-copy cleanly on arbitrary GOPs.
             var args = CommonArguments();
             args.AddRange(new[] { "-f", format, "--merge-output-format", "mp4", "-o", tempPath });
             AddSection(args, sectionStart, end, duration, forceKeyframes: true);
@@ -57,9 +60,18 @@ internal static class MediaDownloader
 
             await RunYtDlpAsync(args, "video-download", "video-postprocess", end - sectionStart, phase, progress, token);
 
+            // Stage 2 is the authoritative exact cut. Use trim/atrim + timestamp reset,
+            // forcing a fresh encode from frame zero instead of seeking inside an already
+            // encoded GOP. This guarantees that output frame zero can be a new IDR frame.
             phase?.Invoke("video-postprocess");
             progress?.Invoke(0, "Creating exact cut...");
             await ReencodeExactCutAsync(tempPath, outputPath, preroll, clipDuration, includeAudio, progress, token);
+
+            // Never accept a cut merely because FFmpeg exited successfully. Verify the
+            // actual first frame in the produced file so regressions cannot silently return.
+            progress?.Invoke(100, "Validating first keyframe...");
+            await ValidateExactCutAsync(outputPath, token);
+            progress?.Invoke(100, "Exact cut validated");
         }
         finally
         {
@@ -125,31 +137,46 @@ internal static class MediaDownloader
             RedirectStandardError = true,
         };
 
+        foreach (var arg in new[] { "-hide_banner", "-loglevel", "error", "-y", "-i", inputPath })
+            psi.ArgumentList.Add(arg);
+
+        var skipSeconds = Stamp(skip);
+        var durationSeconds = Stamp(clipDuration);
+        if (includeAudio)
+        {
+            psi.ArgumentList.Add("-filter_complex");
+            psi.ArgumentList.Add($"[0:v:0]trim=start={skipSeconds}:duration={durationSeconds},setpts=PTS-STARTPTS[v];[0:a:0]atrim=start={skipSeconds}:duration={durationSeconds},asetpts=PTS-STARTPTS[a]");
+            foreach (var arg in new[] { "-map", "[v]", "-map", "[a]" }) psi.ArgumentList.Add(arg);
+        }
+        else
+        {
+            psi.ArgumentList.Add("-filter_complex");
+            psi.ArgumentList.Add($"[0:v:0]trim=start={skipSeconds}:duration={durationSeconds},setpts=PTS-STARTPTS[v]");
+            foreach (var arg in new[] { "-map", "[v]", "-an" }) psi.ArgumentList.Add(arg);
+        }
+
         foreach (var arg in new[]
         {
-            "-hide_banner", "-loglevel", "error", "-y",
-            "-i", inputPath,
-            "-ss", Stamp(skip),
-            "-t", Stamp(clipDuration),
-            "-map", "0:v:0",
             "-c:v", "libx264",
             "-preset", "medium",
             "-crf", "18",
             "-pix_fmt", "yuv420p",
-            "-force_key_frames", "0",
+            "-force_key_frames", "expr:eq(n,0)",
         }) psi.ArgumentList.Add(arg);
 
         if (includeAudio)
         {
-            foreach (var arg in new[] { "-map", "0:a:0?", "-c:a", "aac", "-b:a", "192k" }) psi.ArgumentList.Add(arg);
-        }
-        else
-        {
-            psi.ArgumentList.Add("-an");
+            foreach (var arg in new[] { "-c:a", "aac", "-b:a", "192k" }) psi.ArgumentList.Add(arg);
         }
 
-        foreach (var arg in new[] { "-movflags", "+faststart", "-progress", "pipe:1", "-stats_period", "0.5", outputPath })
-            psi.ArgumentList.Add(arg);
+        foreach (var arg in new[]
+        {
+            "-avoid_negative_ts", "make_zero",
+            "-movflags", "+faststart",
+            "-progress", "pipe:1",
+            "-stats_period", "0.5",
+            outputPath,
+        }) psi.ArgumentList.Add(arg);
 
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         process.Start();
@@ -173,6 +200,49 @@ internal static class MediaDownloader
             throw new InvalidOperationException(errors.LastOrDefault(line => !string.IsNullOrWhiteSpace(line)) ?? $"FFmpeg failed with exit code {process.ExitCode}.");
 
         progress?.Invoke(100, "Exact cut complete");
+    }
+
+    private static async Task ValidateExactCutAsync(string outputPath, CancellationToken token)
+    {
+        var psi = new ProcessStartInfo(FfprobePath)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+
+        foreach (var arg in new[]
+        {
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-read_intervals", "%+#1",
+            "-show_entries", "frame=key_frame,pict_type,best_effort_timestamp_time",
+            "-of", "compact=p=0:nk=0",
+            outputPath,
+        }) psi.ArgumentList.Add(arg);
+
+        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        process.Start();
+        using var registration = token.Register(() => { try { if (!process.HasExited) process.Kill(true); } catch { } });
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(token);
+        var stderrTask = process.StandardError.ReadToEndAsync(token);
+        await Task.WhenAll(stdoutTask, stderrTask, process.WaitForExitAsync(token));
+        token.ThrowIfCancellationRequested();
+
+        var stdout = stdoutTask.Result.Trim();
+        var stderr = stderrTask.Result.Trim();
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(stderr) ? $"ffprobe failed with exit code {process.ExitCode}." : stderr);
+
+        var firstLine = stdout.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+        var keyframe = firstLine.Contains("key_frame=1", StringComparison.OrdinalIgnoreCase);
+        var iFrame = firstLine.Contains("pict_type=I", StringComparison.OrdinalIgnoreCase);
+        if (!keyframe || !iFrame)
+        {
+            try { File.Delete(outputPath); } catch { }
+            throw new InvalidOperationException($"Exact-cut validation failed: the first output video frame is not a keyframe/I-frame. ffprobe: {firstLine}");
+        }
     }
 
     private static async Task RunYtDlpAsync(
