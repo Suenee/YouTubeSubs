@@ -24,12 +24,13 @@ internal sealed class AppConfig
         ["media-finalize"] = 0.5,
     };
 
+    // During development all persistent application state lives next to the
+    // repository executable. Temporary processing data may still use %TEMP%.
     public static string AppDirectory
     {
         get
         {
-            var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var path = Path.Combine(root, "YouTubeSubs");
+            var path = Path.Combine(AppContext.BaseDirectory, "config");
             Directory.CreateDirectory(path);
             return path;
         }
