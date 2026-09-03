@@ -13,10 +13,17 @@ All notable changes to this project are documented here.
 - Make media-tool maintenance incremental: yt-dlp now checks its stable channel and only replaces itself when needed, while FFmpeg compares the installed version with Gyan's small `.ver` endpoint before downloading the essentials archive.
 - Keep full validation of yt-dlp, FFmpeg, and ffprobe after every dependency check even when no download is required.
 - Add project-standard application logging modes `off`, `single`, and `all` using the single canonical `logs/YouTubeSubs.log` file. `single` truncates the file for each run; `all` appends subsequent sessions to the same file.
+- Make `single` the default logging mode for new configurations.
 - Add high-resolution startup timing and application/UI event diagnostics so slow startup and runtime behavior can be measured instead of guessed.
 - Move completed updater diagnostics to `logs/upgrade.log` and force UTF-8 console output to prevent localized .NET/MSBuild text from being mojibake in CMD.
+- Include the application version in final updater SUCCESS, WARNING, and FAILED status lines.
 - Compact the output selector row so duration information shares the same row as Subtitles / Video / Audio and remove the unnecessary vertical gap before the From / To controls.
 - Normalize edited time fields when Enter is pressed and when focus is committed by clicking the form background, in addition to the existing focus-leave normalization.
+- Disable the subtitle format selector whenever Subtitles is unavailable or unchecked while preserving the selected format.
+- Show `Enter a YouTube URL or Video ID...` in the title/status area until a video is loaded.
+- Wrap the main content in an explicit padded layout container so the left and right window margins are structurally symmetrical instead of depending on WinForms Form.Padding or root-control Margin behavior.
+- Restore the `TimeTextBox` and `DialogPositioning` helper classes after the UI hotfix build regression.
+- Harden updater bootstrap handling against false local-change detection around `upgrade.cmd` self-update and line-ending normalization.
 - Keep GUI and CLI assemblies and upgrade validation on version 2.14 for these same-version hotfixes.
 
 ## 2.13 - 02.09.2026
