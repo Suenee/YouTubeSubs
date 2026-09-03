@@ -5,7 +5,7 @@ namespace YouTubeSubs;
 
 internal static class CliProgram
 {
-    private const string Version = "2.17";
+    private const string Version = "2.18";
     private static int Main(string[] args)
     {
         if (args.Length == 0) return LaunchGui();
