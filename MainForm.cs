@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace YouTubeSubs;
 
@@ -26,7 +27,8 @@ internal sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer _analyzeTimer = new() { Interval = 500 };
     private readonly Dictionary<string, string> _languageMap = new(StringComparer.OrdinalIgnoreCase);
     private readonly TableLayoutPanel _projectPanel;
-    private readonly Label _projectInfo = new() { AutoSize = true };
+    private readonly Label _projectName = new() { AutoSize = true, Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold) };
+    private readonly LinkLabel _projectMarker = new() { AutoSize = true, Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold) };
     private readonly TextBox _clipName = new() { Width = 300 };
     private ProjectLaunchOptions? _projectLaunch;
     private VideoInfo? _info;
@@ -86,11 +88,14 @@ internal sealed class MainForm : Form
         _projectPanel = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Dock = DockStyle.Fill, Visible = false, Margin = new Padding(0, 6, 0, 3) };
         _projectPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _projectPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        _projectPanel.Controls.Add(_projectInfo, 0, 0);
-        _projectPanel.SetColumnSpan(_projectInfo, 2);
-        _projectPanel.Controls.Add(new Label { Text = "Clip name", AutoSize = true, Margin = new Padding(0, 6, 8, 0) }, 0, 1);
+        _projectPanel.Controls.Add(new Label { Text = "Project", AutoSize = true, Margin = new Padding(0, 3, 8, 0) }, 0, 0);
+        _projectPanel.Controls.Add(_projectName, 1, 0);
+        _projectPanel.Controls.Add(new Label { Text = "Marker", AutoSize = true, Margin = new Padding(0, 6, 8, 0) }, 0, 1);
+        _projectMarker.Margin = new Padding(0, 3, 0, 0);
+        _projectPanel.Controls.Add(_projectMarker, 1, 1);
+        _projectPanel.Controls.Add(new Label { Text = "Clip name", AutoSize = true, Margin = new Padding(0, 6, 8, 0) }, 0, 2);
         _clipName.Dock = DockStyle.Fill;
-        _projectPanel.Controls.Add(_clipName, 1, 1);
+        _projectPanel.Controls.Add(_clipName, 1, 2);
         table.SetColumnSpan(_projectPanel, 2);
         table.Controls.Add(_projectPanel, 0, 5);
 
@@ -116,6 +121,7 @@ internal sealed class MainForm : Form
         _format.SelectedIndexChanged += (_, _) => SaveFormat();
         _download.Click += async (_, _) => await DownloadAsync();
         cancel.Click += (_, _) => Close();
+        _projectMarker.LinkClicked += (_, _) => CopyCurrentProjectMarker();
         _subtitles.CheckedChanged += (_, _) => { UpdateFormatState(); UpdateDownloadState(); };
         _video.CheckedChanged += (_, _) =>
         {
@@ -184,7 +190,16 @@ internal sealed class MainForm : Form
 
         _audioSuggestionHandled = true;
         _projectPanel.Visible = true;
-        _projectInfo.Text = $"Project: {_projectLaunch.Project}   |   {_projectLaunch.ModeLabel} ID: {_projectLaunch.RequestedId}";
+        try
+        {
+            var projectDirectory = ProjectStorage.ResolveProjectDirectory(_config.EditingRoot, _projectLaunch.Project);
+            _projectName.Text = Path.GetFileName(projectDirectory);
+        }
+        catch
+        {
+            _projectName.Text = _projectLaunch.Project;
+        }
+        UpdateProjectMarkerText();
         _subtitles.Checked = false;
         _subtitles.Enabled = false;
         _video.Checked = true;
@@ -194,6 +209,38 @@ internal sealed class MainForm : Form
         _language.Enabled = false;
         _format.Enabled = false;
         UpdateDownloadState();
+    }
+
+    private void UpdateProjectMarkerText()
+    {
+        if (_projectLaunch is null) { _projectMarker.Text = string.Empty; return; }
+        var template = _projectLaunch.Mode == ProjectMediaMode.AudioVideo ? _config.AvMarkerHtml : _config.BrollMarkerHtml;
+        try
+        {
+            var rendered = MarkerClipboard.Render(template, _projectLaunch.RequestedId);
+            var visible = Regex.Replace(rendered, "<[^>]+>", string.Empty).Trim();
+            _projectMarker.Text = string.IsNullOrWhiteSpace(visible) ? $"{_projectLaunch.ModeLabel} {_projectLaunch.RequestedId}" : visible;
+        }
+        catch
+        {
+            _projectMarker.Text = $"{_projectLaunch.ModeLabel} {_projectLaunch.RequestedId}";
+        }
+    }
+
+    private void CopyCurrentProjectMarker()
+    {
+        if (_projectLaunch is null) return;
+        var template = _projectLaunch.Mode == ProjectMediaMode.AudioVideo ? _config.AvMarkerHtml : _config.BrollMarkerHtml;
+        try
+        {
+            MarkerClipboard.SetHtmlTemplate(template, _projectLaunch.RequestedId);
+            AppLog.Write("CLIPBOARD", $"marker-click mode={_projectLaunch.ModeLabel} id={_projectLaunch.RequestedId}");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Exception("marker clipboard click", ex);
+            MessageBox.Show(this, ex.Message, "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     private void UpdateFormatState() => _format.Enabled = _projectLaunch is null && _subtitles.Enabled && _subtitles.Checked;
@@ -571,6 +618,7 @@ internal sealed class MainForm : Form
             return;
         }
 
+        var clipboardOk = false;
         try
         {
             MarkerClipboard.SetHtmlTemplate(markerTemplate, actualId);
@@ -578,6 +626,7 @@ internal sealed class MainForm : Form
             AppLog.Write("OUTPUT", $"saved={finalPath} size={size}");
             AppLog.Write("CLIPBOARD", $"marker={launch.ModeLabel} id={actualId}");
             AppLog.Write("JOB END", $"status=SUCCESS elapsed={job.Elapsed.TotalSeconds:0.00}s");
+            clipboardOk = true;
         }
         catch (Exception ex)
         {
@@ -590,6 +639,13 @@ internal sealed class MainForm : Form
             _projectLaunch = launch with { RequestedId = actualId };
             ApplyProjectModeState();
         }
+
+        if (clipboardOk)
+        {
+            Close();
+            return;
+        }
+
         UpdateDownloadState();
         ActivateFront();
     }
@@ -724,6 +780,7 @@ internal sealed class MainForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        TaskbarProgress.Clear(this);
         _config.Save();
         base.OnFormClosed(e);
     }
