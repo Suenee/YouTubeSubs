@@ -12,6 +12,8 @@ ytsubs-cli.exe
 assets/ytsubs.ico
 tools/*.exe
 tools/*.zip
+config/
+logs/
 .venv/
 __pycache__/
 .pytest_cache/
