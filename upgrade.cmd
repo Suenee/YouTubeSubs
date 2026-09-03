@@ -1,5 +1,6 @@
 @echo off
 cls
+chcp 65001 >nul
 setlocal EnableExtensions EnableDelayedExpansion
 
 if defined YTSUBS_REPO_DIR (
@@ -41,4 +42,4 @@ if errorlevel 1 (
 )
 
 rem Keep the runner call, cleanup, and exit on one parsed line so replacing upgrade.cmd during Git sync cannot mix launcher generations.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%YTSUBS_REMOTE_RUNNER%" & set "YTSUBS_RC=!ERRORLEVEL!" & del "%YTSUBS_REMOTE_RUNNER%" >nul 2>nul & exit /b !YTSUBS_RC!
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); & '%YTSUBS_REMOTE_RUNNER%'" & set "YTSUBS_RC=!ERRORLEVEL!" & del "%YTSUBS_REMOTE_RUNNER%" >nul 2>nul & exit /b !YTSUBS_RC!
