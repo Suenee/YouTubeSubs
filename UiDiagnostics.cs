@@ -35,7 +35,10 @@ internal static class UiDiagnostics
                 break;
         }
 
-        control.ControlAdded += (_, e) => AttachRecursive(e.Control);
+        control.ControlAdded += (_, e) =>
+        {
+            if (e.Control is not null) AttachRecursive(e.Control);
+        };
         foreach (Control child in control.Controls) AttachRecursive(child);
     }
 
