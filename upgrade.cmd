@@ -41,5 +41,5 @@ if errorlevel 1 (
     exit /b 15
 )
 
-rem Keep the runner call, cleanup, and exit on one parsed line so replacing upgrade.cmd during Git sync cannot mix launcher generations.
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); & '%YTSUBS_REMOTE_RUNNER%'" & set "YTSUBS_RC=!ERRORLEVEL!" & del "%YTSUBS_REMOTE_RUNNER%" >nul 2>nul & exit /b !YTSUBS_RC!
+rem Keep the runner call, cleanup, log relocation, and exit on one parsed line so replacing upgrade.cmd during Git sync cannot mix launcher generations.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); & '%YTSUBS_REMOTE_RUNNER%'" & set "YTSUBS_RC=!ERRORLEVEL!" & del "%YTSUBS_REMOTE_RUNNER%" >nul 2>nul & if not exist "%YTSUBS_REPO_DIR%\logs" mkdir "%YTSUBS_REPO_DIR%\logs" >nul 2>nul & if exist "%YTSUBS_REPO_DIR%\upgrade.log" move /y "%YTSUBS_REPO_DIR%\upgrade.log" "%YTSUBS_REPO_DIR%\logs\upgrade.log" >nul & exit /b !YTSUBS_RC!
