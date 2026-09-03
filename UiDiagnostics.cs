@@ -46,6 +46,52 @@ internal static class UiDiagnostics
     }
 }
 
+internal static class UiInteractionFix
+{
+    public static void Attach(Form form)
+    {
+        foreach (var timeBox in Descendants(form).OfType<TimeTextBox>())
+        {
+            timeBox.KeyDown += (_, e) =>
+            {
+                if (e.KeyCode is not (Keys.Enter or Keys.Return)) return;
+                e.SuppressKeyPress = true;
+                e.Handled = true;
+                AppLog.Write($"UI time normalize requested by Enter value={timeBox.Text}");
+                form.ActiveControl = null;
+            };
+        }
+
+        AttachBackgroundCommit(form, form);
+    }
+
+    private static void AttachBackgroundCommit(Control control, Form form)
+    {
+        if (control is not TextBox && control is not ComboBox && control is not Button && control is not CheckBox && control is not LinkLabel)
+        {
+            control.MouseDown += (_, _) =>
+            {
+                if (form.ActiveControl is TimeTextBox)
+                {
+                    AppLog.Write("UI time normalize requested by background click");
+                    form.ActiveControl = null;
+                }
+            };
+        }
+
+        foreach (Control child in control.Controls) AttachBackgroundCommit(child, form);
+    }
+
+    private static IEnumerable<Control> Descendants(Control root)
+    {
+        foreach (Control child in root.Controls)
+        {
+            yield return child;
+            foreach (var descendant in Descendants(child)) yield return descendant;
+        }
+    }
+}
+
 internal static class UiLayoutFix
 {
     public static void Apply(Form form)
