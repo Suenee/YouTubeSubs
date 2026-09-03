@@ -51,8 +51,6 @@ internal static class MediaDownloader
 
         try
         {
-            // Stage 1 deliberately creates a decodable source section with preroll. The
-            // requested visible cut is not trusted to stream-copy cleanly on arbitrary GOPs.
             var args = CommonArguments();
             args.AddRange(new[] { "-f", format, "--merge-output-format", "mp4", "-o", tempPath });
             AddSection(args, sectionStart, end, duration, forceKeyframes: true);
@@ -60,15 +58,10 @@ internal static class MediaDownloader
 
             await RunYtDlpAsync(args, "video-download", "video-postprocess", end - sectionStart, phase, progress, token);
 
-            // Stage 2 is the authoritative exact cut. Use trim/atrim + timestamp reset,
-            // forcing a fresh encode from frame zero instead of seeking inside an already
-            // encoded GOP. This guarantees that output frame zero can be a new IDR frame.
             phase?.Invoke("video-postprocess");
             progress?.Invoke(0, "Creating exact cut...");
             await ReencodeExactCutAsync(tempPath, outputPath, preroll, clipDuration, includeAudio, progress, token);
 
-            // Never accept a cut merely because FFmpeg exited successfully. Verify the
-            // actual first frame in the produced file so regressions cannot silently return.
             progress?.Invoke(100, "Validating first keyframe...");
             await ValidateExactCutAsync(outputPath, token);
             progress?.Invoke(100, "Exact cut validated");
@@ -217,6 +210,7 @@ internal static class MediaDownloader
             "-v", "error",
             "-select_streams", "v:0",
             "-read_intervals", "%+#1",
+            "-show_frames",
             "-show_entries", "frame=key_frame,pict_type,best_effort_timestamp_time",
             "-of", "compact=p=0:nk=0",
             outputPath,
