@@ -25,14 +25,19 @@ internal sealed class MainForm : Form
     private readonly Button _download = new() { Text = "Download", AutoSize = true, Enabled = false };
     private readonly System.Windows.Forms.Timer _analyzeTimer = new() { Interval = 500 };
     private readonly Dictionary<string, string> _languageMap = new(StringComparer.OrdinalIgnoreCase);
+    private readonly TableLayoutPanel _projectPanel;
+    private readonly Label _projectInfo = new() { AutoSize = true };
+    private readonly TextBox _clipName = new() { Width = 300 };
+    private ProjectLaunchOptions? _projectLaunch;
     private VideoInfo? _info;
     private bool _busy;
     private bool _normalizingRange;
     private bool _audioSuggestionHandled;
 
-    public MainForm(AppConfig config)
+    public MainForm(AppConfig config, ProjectLaunchOptions? launch = null)
     {
         _config = config;
+        _projectLaunch = launch;
         _fromHost = WrapTimeBox(_from);
         _toHost = WrapTimeBox(_to);
 
@@ -52,7 +57,7 @@ internal sealed class MainForm : Form
         var saved = "." + _config.LastFormat;
         _format.SelectedItem = _format.Items.Cast<object>().FirstOrDefault(i => string.Equals(i.ToString(), saved, StringComparison.OrdinalIgnoreCase)) ?? ".srt";
 
-        var table = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, RowCount = 9 };
+        var table = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, RowCount = 10 };
         table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         table.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         table.Controls.Add(new Label { Text = "YouTube URL / Video ID", AutoSize = true }, 0, 0);
@@ -78,22 +83,33 @@ internal sealed class MainForm : Form
         table.SetColumnSpan(outputRow, 2);
         table.Controls.Add(outputRow, 0, 4);
 
+        _projectPanel = new TableLayoutPanel { AutoSize = true, ColumnCount = 2, Dock = DockStyle.Fill, Visible = false, Margin = new Padding(0, 6, 0, 3) };
+        _projectPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        _projectPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        _projectPanel.Controls.Add(_projectInfo, 0, 0);
+        _projectPanel.SetColumnSpan(_projectInfo, 2);
+        _projectPanel.Controls.Add(new Label { Text = "Clip name", AutoSize = true, Margin = new Padding(0, 6, 8, 0) }, 0, 1);
+        _clipName.Dock = DockStyle.Fill;
+        _projectPanel.Controls.Add(_clipName, 1, 1);
+        table.SetColumnSpan(_projectPanel, 2);
+        table.Controls.Add(_projectPanel, 0, 5);
+
         var times = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Anchor = AnchorStyles.None, WrapContents = false };
         times.Controls.Add(new Label { Text = "From", AutoSize = true, Margin = new Padding(0, 6, 3, 0) });
         times.Controls.Add(_fromHost);
         times.Controls.Add(new Label { Text = "To", AutoSize = true, Margin = new Padding(10, 6, 3, 0) });
         times.Controls.Add(_toHost);
         table.SetColumnSpan(times, 2);
-        table.Controls.Add(times, 0, 5);
+        table.Controls.Add(times, 0, 6);
 
         table.SetColumnSpan(_status, 2);
-        table.Controls.Add(_status, 0, 6);
+        table.Controls.Add(_status, 0, 7);
         var buttons = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, Anchor = AnchorStyles.Right };
         buttons.Controls.Add(_download);
         var cancel = new Button { Text = "Cancel", AutoSize = true };
         buttons.Controls.Add(cancel);
         table.SetColumnSpan(buttons, 2);
-        table.Controls.Add(buttons, 0, 7);
+        table.Controls.Add(buttons, 0, 8);
         Controls.Add(table);
 
         _input.TextChanged += (_, _) => ScheduleAnalysis();
@@ -103,7 +119,7 @@ internal sealed class MainForm : Form
         _subtitles.CheckedChanged += (_, _) => { UpdateFormatState(); UpdateDownloadState(); };
         _video.CheckedChanged += (_, _) =>
         {
-            if (_video.Checked && !_audioSuggestionHandled)
+            if (_projectLaunch is null && _video.Checked && !_audioSuggestionHandled)
             {
                 _audioSuggestionHandled = true;
                 _audio.Checked = true;
@@ -123,6 +139,7 @@ internal sealed class MainForm : Form
         Shown += (_, _) => { _input.Focus(); ActivateFront(); };
         UpdateFormatState();
         ShowInputPrompt();
+        if (_projectLaunch is not null) ApplyProjectModeState();
     }
 
     public void ActivateFront()
@@ -136,7 +153,50 @@ internal sealed class MainForm : Form
         BeginInvoke(new Action(async () => { await Task.Delay(200); if (!IsDisposed) TopMost = false; }));
     }
 
-    private void UpdateFormatState() => _format.Enabled = _subtitles.Enabled && _subtitles.Checked;
+    public void ApplyProjectLaunch(ProjectLaunchOptions launch)
+    {
+        if (_busy)
+        {
+            MessageBox.Show(this, "YouTubeSubs is busy. Finish or cancel the current operation before opening another project media ID.", "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            ActivateFront();
+            return;
+        }
+
+        _projectLaunch = launch;
+        _audioSuggestionHandled = true;
+        _analyzeTimer.Stop();
+        _input.Clear();
+        _clipName.Clear();
+        ClearState(false);
+        ApplyProjectModeState();
+        AppLog.Write("PROJECT", $"active mode={launch.ModeLabel} id={launch.RequestedId} project={launch.Project}");
+        ActivateFront();
+        _input.Focus();
+    }
+
+    private void ApplyProjectModeState()
+    {
+        if (_projectLaunch is null)
+        {
+            _projectPanel.Visible = false;
+            return;
+        }
+
+        _audioSuggestionHandled = true;
+        _projectPanel.Visible = true;
+        _projectInfo.Text = $"Project: {_projectLaunch.Project}   |   {_projectLaunch.ModeLabel} ID: {_projectLaunch.RequestedId}";
+        _subtitles.Checked = false;
+        _subtitles.Enabled = false;
+        _video.Checked = true;
+        _video.Enabled = false;
+        _audio.Checked = _projectLaunch.Mode == ProjectMediaMode.AudioVideo;
+        _audio.Enabled = false;
+        _language.Enabled = false;
+        _format.Enabled = false;
+        UpdateDownloadState();
+    }
+
+    private void UpdateFormatState() => _format.Enabled = _projectLaunch is null && _subtitles.Enabled && _subtitles.Checked;
 
     private void ShowInputPrompt()
     {
@@ -178,6 +238,7 @@ internal sealed class MainForm : Form
         _status.Text = invalid ? "Invalid Video ID. Please try again..." : InputPrompt;
         _status.LinkColor = invalid ? Color.FromArgb(192, 0, 0) : SystemColors.GrayText;
         _status.Links.Clear();
+        if (_projectLaunch is not null) ApplyProjectModeState();
     }
 
     private Task AnalyzeAsync()
@@ -214,9 +275,18 @@ internal sealed class MainForm : Form
             _languageMap[label] = code;
         }
         _language.SelectedIndex = 0;
-        _subtitles.Enabled = result.Tracks.Count > 0;
-        if (result.Tracks.Count == 0) _subtitles.Checked = false;
-        UpdateFormatState();
+        if (_projectLaunch is null)
+        {
+            _subtitles.Enabled = result.Tracks.Count > 0;
+            if (result.Tracks.Count == 0) _subtitles.Checked = false;
+            _language.Enabled = true;
+            UpdateFormatState();
+        }
+        else
+        {
+            _clipName.Text = ProjectStorage.SuggestClipName(result.Title, _config.ClipNameMaxWords);
+            ApplyProjectModeState();
+        }
 
         var timestamp = YoutubeService.ExtractTimestamp(value);
         _normalizingRange = true;
@@ -251,7 +321,7 @@ internal sealed class MainForm : Form
             return;
         }
 
-        var any = (_subtitles.Checked && _subtitles.Enabled) || _video.Checked || _audio.Checked;
+        var any = _projectLaunch is not null || (_subtitles.Checked && _subtitles.Enabled) || _video.Checked || _audio.Checked;
         var valid = TryResolveRange(out var start, out var end, out var invalidFrom, out var invalidTo);
         var durationOk = valid && (end - start).TotalSeconds >= 2;
         SetTimeValidity(_from, _fromHost, !invalidFrom && durationOk);
@@ -404,7 +474,129 @@ internal sealed class MainForm : Form
         if (_info is null || _busy) return;
         NormalizeRange();
         if (!TryResolveRange(out var start, out var end, out _, out _) || (end - start).TotalSeconds < 2) return;
+        if (_projectLaunch is not null)
+        {
+            await DownloadProjectMediaAsync(start, end);
+            return;
+        }
+        await DownloadNormalAsync(start, end);
+    }
 
+    private async Task DownloadProjectMediaAsync(TimeSpan start, TimeSpan end)
+    {
+        if (_info is null || _projectLaunch is null) return;
+        var launch = _projectLaunch;
+        string brollDirectory;
+        try { brollDirectory = ProjectStorage.ResolveBrollDirectory(_config.EditingRoot, launch.Project); }
+        catch (Exception ex)
+        {
+            AppLog.Exception("project directory resolution", ex);
+            MessageBox.Show(this, ex.Message, "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        var actualId = launch.RequestedId;
+        var existing = ProjectStorage.FindClipsById(brollDirectory, actualId);
+        var replaceExisting = false;
+        if (existing.Count > 0)
+        {
+            var freeId = ProjectStorage.FindNextFreeId(brollDirectory, actualId);
+            using var collision = new ClipCollisionDialog(this, actualId, freeId);
+            collision.ShowDialog(this);
+            if (collision.Choice == ClipCollisionChoice.Cancel) return;
+            if (collision.Choice == ClipCollisionChoice.Move) actualId = freeId;
+            else replaceExisting = true;
+        }
+
+        var clipName = ProjectStorage.SanitizeClipName(_clipName.Text, _config.ClipNameMaxWords);
+        _clipName.Text = clipName;
+        var finalPath = ProjectStorage.BuildClipPath(brollDirectory, actualId, clipName);
+        var temporaryPath = Path.Combine(brollDirectory, $".ytsubs-{Guid.NewGuid():N}.mp4");
+        var includeAudio = launch.Mode == ProjectMediaMode.AudioVideo;
+        var markerTemplate = includeAudio ? _config.AvMarkerHtml : _config.BrollMarkerHtml;
+        var job = Stopwatch.StartNew();
+        AppLog.Write("JOB START", $"project-media mode={launch.ModeLabel} requested_id={launch.RequestedId} final_id={actualId}");
+        AppLog.Write("JOB", $"video={_info.VideoId} range={FormatTime(start)}-{FormatTime(end)} audio={includeAudio} target={finalPath}");
+
+        _busy = true;
+        _download.Enabled = false;
+        using var dialog = new ProgressDialog(this, "Downloading", new[] { "video-download", "video-postprocess", "media-finalize" }, _config);
+        Exception? error = null;
+        dialog.Shown += async (_, _) =>
+        {
+            try
+            {
+                await MediaDownloader.DownloadVideoAsync(
+                    _info.VideoId,
+                    temporaryPath,
+                    includeAudio,
+                    start,
+                    end,
+                    _info.Duration,
+                    dialog.SetPhase,
+                    dialog.SetProgress,
+                    dialog.Cancellation.Token);
+                dialog.SetPhase("media-finalize");
+                if (replaceExisting)
+                {
+                    foreach (var oldPath in existing) if (File.Exists(oldPath)) File.Delete(oldPath);
+                }
+                File.Move(temporaryPath, finalPath, true);
+                dialog.SetProgress(100);
+            }
+            catch (OperationCanceledException)
+            {
+                try { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); } catch { }
+            }
+            catch (Exception ex) { error = ex; }
+            finally { dialog.Finish(error is null && !dialog.Cancellation.IsCancellationRequested); }
+        };
+
+        dialog.ShowDialog(this);
+        _busy = false;
+        try { if (File.Exists(temporaryPath)) File.Delete(temporaryPath); } catch { }
+        if (dialog.ExitApplication) { Application.Exit(); return; }
+        if (dialog.Cancellation.IsCancellationRequested)
+        {
+            AppLog.Write("JOB END", $"status=CANCELLED elapsed={job.Elapsed.TotalSeconds:0.00}s");
+            UpdateDownloadState();
+            return;
+        }
+        if (error is not null)
+        {
+            AppLog.Exception("project media download", error);
+            AppLog.Write("JOB END", $"status=FAILED elapsed={job.Elapsed.TotalSeconds:0.00}s");
+            UpdateDownloadState();
+            MessageBox.Show(this, error.Message, "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        try
+        {
+            MarkerClipboard.SetHtmlTemplate(markerTemplate, actualId);
+            var size = new FileInfo(finalPath).Length;
+            AppLog.Write("OUTPUT", $"saved={finalPath} size={size}");
+            AppLog.Write("CLIPBOARD", $"marker={launch.ModeLabel} id={actualId}");
+            AppLog.Write("JOB END", $"status=SUCCESS elapsed={job.Elapsed.TotalSeconds:0.00}s");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Exception("marker clipboard", ex);
+            MessageBox.Show(this, $"The media file was saved, but the marker could not be copied to Clipboard.\n\n{ex.Message}", "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+
+        if (actualId != launch.RequestedId)
+        {
+            _projectLaunch = launch with { RequestedId = actualId };
+            ApplyProjectModeState();
+        }
+        UpdateDownloadState();
+        ActivateFront();
+    }
+
+    private async Task DownloadNormalAsync(TimeSpan start, TimeSpan end)
+    {
+        if (_info is null) return;
         var wantSubtitles = _subtitles.Checked && _subtitles.Enabled;
         var wantVideo = _video.Checked;
         var wantAudio = _audio.Checked;
@@ -482,30 +674,13 @@ internal sealed class MainForm : Form
 
                 if (paths.TryGetValue("video", out var videoPath))
                 {
-                    await MediaDownloader.DownloadVideoAsync(
-                        _info.VideoId,
-                        videoPath,
-                        wantAudio,
-                        start,
-                        end,
-                        _info.Duration,
-                        dialog.SetPhase,
-                        dialog.SetProgress,
-                        dialog.Cancellation.Token);
+                    await MediaDownloader.DownloadVideoAsync(_info.VideoId, videoPath, wantAudio, start, end, _info.Duration, dialog.SetPhase, dialog.SetProgress, dialog.Cancellation.Token);
                     dialog.SetPhase("media-finalize");
                     dialog.SetProgress(100);
                 }
                 else if (paths.TryGetValue("audio", out var audioPath))
                 {
-                    await MediaDownloader.DownloadAudioAsync(
-                        _info.VideoId,
-                        audioPath,
-                        start,
-                        end,
-                        _info.Duration,
-                        dialog.SetPhase,
-                        dialog.SetProgress,
-                        dialog.Cancellation.Token);
+                    await MediaDownloader.DownloadAudioAsync(_info.VideoId, audioPath, start, end, _info.Duration, dialog.SetPhase, dialog.SetProgress, dialog.Cancellation.Token);
                     dialog.SetPhase("media-finalize");
                     dialog.SetProgress(100);
                 }
