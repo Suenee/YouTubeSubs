@@ -20,6 +20,7 @@ The GUI remains single-instance. A second GUI launch activates the existing wind
 - Exact partial-video cuts with a clean first keyframe.
 - Video-only output creates a silent MP4; Video + Audio creates one MP4 containing both streams.
 - Project-media workflow for VoicePrompter/BROLL preparation.
+- Mirror overall processing progress to the Windows taskbar so progress remains visible while the GUI is minimized.
 - Repository-local configuration and logs, including mapped/network-drive repositories.
 - Logging modes `off`, `single`, and `all`.
 
@@ -52,7 +53,7 @@ Run:
 ytsubs.exe
 ```
 
-Enter a YouTube URL or video ID. Analysis starts automatically after 500 ms. Select subtitles, video, and/or audio, set the optional From/To range, then download.
+Enter a YouTube URL or video ID. Analysis starts automatically after 500 ms. Select subtitles, video, and/or audio, set the optional From/To range, then download. During analysis and processing, the learned overall progress is also shown on the Windows taskbar button.
 
 ## Project media mode
 
@@ -77,9 +78,12 @@ In project mode:
 - YouTubeSubs proposes a short editable clip name, limited to four words by default.
 - Download does not ask for an output directory.
 - The application searches the configured editing root for exactly one `YYYYMMDD Project` directory with the requested project name. If none exists, today's directory is created. Multiple dated directories for the same project name are treated as an error.
+- The resolved `YYYYMMDD Project` directory name is shown in full in the GUI.
 - Output is stored below `BROLL` as `NNN - short clip name.mp4`.
 - If the requested ID already exists, the user gets `Replace`, `Move to XX`, or `Cancel`. `XX` is the first free ID after the requested number.
+- The current marker is shown prominently as a clickable link. Clicking it copies the configured marker to Clipboard without downloading.
 - After a successful download, the marker template for the selected mode is rendered with the final ID and copied to Clipboard.
+- After both media finalization and Clipboard update succeed, project mode closes automatically. Errors, cancellation, or Clipboard failure leave the window open.
 
 ## Marker templates and project configuration
 
@@ -100,7 +104,7 @@ Relevant project-media settings are:
 }
 ```
 
-Replace the marker values with the actual HTML fragments required by VoicePrompter. The only required placeholder is `{id}`. After download, YouTubeSubs publishes the rendered marker to Clipboard as both plain text and HTML clipboard data.
+Replace the marker values with the actual HTML fragments required by VoicePrompter. The only required placeholder is `{id}`. YouTubeSubs publishes the rendered marker to Clipboard as both plain text and HTML clipboard data.
 
 ## CLI
 
