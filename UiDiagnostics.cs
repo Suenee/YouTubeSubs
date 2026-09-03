@@ -98,15 +98,15 @@ internal static class UiLayoutFix
     {
         var stopwatch = Stopwatch.StartNew();
 
-        // Keep the visible content inset symmetrical. WinForms child margins were
-        // effectively consuming the right-side space while the left edge sat too
-        // close to the client border, so normalize the root table explicitly.
+        // The root table is AutoSize, so its own Margin participates in the form's
+        // preferred size. Give it the horizontal inset directly instead of relying
+        // on Form.Padding, which WinForms AutoSize did not preserve symmetrically.
         var rootTable = form.Controls.OfType<TableLayoutPanel>().FirstOrDefault();
         if (rootTable is not null)
         {
-            rootTable.Margin = Padding.Empty;
+            form.Padding = Padding.Empty;
+            rootTable.Margin = new Padding(14, 14, 14, 14);
             rootTable.Padding = Padding.Empty;
-            form.Padding = new Padding(14, form.Padding.Top, 14, form.Padding.Bottom);
         }
 
         var checkboxes = Descendants(form).OfType<CheckBox>().ToArray();
