@@ -578,3 +578,66 @@ internal sealed class MainForm : Form
         if (_from.Focused || _to.Focused) NormalizeRange();
     }
 }
+
+internal sealed class TimeTextBox : TextBox
+{
+    private const int WmPaste = 0x0302;
+
+    protected override void OnEnter(EventArgs e)
+    {
+        base.OnEnter(e);
+        BeginInvoke(new Action(SelectAll));
+    }
+
+    protected override void OnKeyPress(KeyPressEventArgs e)
+    {
+        if (char.IsControl(e.KeyChar)) { base.OnKeyPress(e); return; }
+        if (!char.IsDigit(e.KeyChar) && e.KeyChar != ':' && e.KeyChar != '+' && e.KeyChar != '-') { e.Handled = true; return; }
+        if ((e.KeyChar == '+' || e.KeyChar == '-') && !(SelectionStart == 0 && (SelectionLength == Text.Length || (Text.Length == 0 && SelectionLength == 0)))) { e.Handled = true; return; }
+        base.OnKeyPress(e);
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WmPaste && Clipboard.ContainsText())
+        {
+            var paste = Clipboard.GetText();
+            var candidate = Text.Remove(SelectionStart, SelectionLength).Insert(SelectionStart, paste);
+            if (!ValidCharacters(candidate)) return;
+        }
+        base.WndProc(ref m);
+    }
+
+    private bool ValidCharacters(string value)
+    {
+        if (value.Length > MaxLength) return false;
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            if (char.IsDigit(c) || c == ':') continue;
+            if ((c == '+' || c == '-') && i == 0 && value.Count(x => x is '+' or '-') == 1) continue;
+            return false;
+        }
+        return true;
+    }
+}
+
+internal static class DialogPositioning
+{
+    public static DialogResult ShowSaveDialogCenteredOnScreen(SaveFileDialog dialog, Form owner)
+    {
+        var area = Screen.FromControl(owner).WorkingArea;
+        using var proxy = new Form
+        {
+            StartPosition = FormStartPosition.Manual,
+            Bounds = area,
+            FormBorderStyle = FormBorderStyle.None,
+            ShowInTaskbar = false,
+            Opacity = 0,
+            Owner = owner,
+        };
+        proxy.Show();
+        try { return dialog.ShowDialog(proxy); }
+        finally { proxy.Close(); }
+    }
+}
