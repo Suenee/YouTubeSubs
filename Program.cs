@@ -7,7 +7,7 @@ namespace YouTubeSubs;
 
 internal static class Program
 {
-    public const string Version = "2.21";
+    public const string Version = "2.22";
     private const int GuiPort = 45871;
 
     [STAThread]
@@ -50,12 +50,10 @@ internal static class Program
 
     private static int RunGlobalBrollGui(AppConfig config, Stopwatch startup, GlobalBrollLaunchOptions launch)
     {
-        GlobalBrollConfig brollConfig;
         string targetDirectory;
         try
         {
-            brollConfig = GlobalBrollConfig.Load();
-            targetDirectory = GlobalBrollStorage.ResolveTargetDirectory(brollConfig);
+            targetDirectory = GlobalBrollStorage.ResolveTargetDirectory(config.Broll);
             AppLog.Write("BROLL", $"target={targetDirectory}");
         }
         catch (Exception ex)
@@ -68,7 +66,7 @@ internal static class Program
         }
 
         AppLog.Write("STARTUP", $"GlobalBrollForm construction begin elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
-        using var form = new GlobalBrollForm(config, brollConfig, launch, targetDirectory);
+        using var form = new GlobalBrollForm(config, config.Broll, launch, targetDirectory);
         AppLog.Write("STARTUP", $"GlobalBrollForm constructed elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
         form.HandleCreated += (_, _) => AppLog.Write("STARTUP", $"global BROLL window handle created elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
         form.Load += (_, _) => AppLog.Write("STARTUP", $"global BROLL form Load elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
