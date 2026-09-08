@@ -74,10 +74,11 @@ internal sealed class AppConfig
     public static AppConfig Load()
     {
         AppConfig config;
+        var configExists = File.Exists(ConfigPath);
         var hasBrollSection = false;
         try
         {
-            if (File.Exists(ConfigPath))
+            if (configExists)
             {
                 var json = File.ReadAllText(ConfigPath);
                 using var document = JsonDocument.Parse(json);
@@ -88,23 +89,24 @@ internal sealed class AppConfig
         }
         catch { config = new AppConfig(); }
 
-        var migratedLegacyBroll = false;
-        if (!hasBrollSection && File.Exists(LegacyBrollConfigPath))
+        var legacyExists = File.Exists(LegacyBrollConfigPath);
+        if (!hasBrollSection && legacyExists)
         {
             try
             {
                 var legacy = JsonSerializer.Deserialize<BrollSettings>(File.ReadAllText(LegacyBrollConfigPath), JsonOptions);
-                if (legacy is not null)
-                {
-                    config.Broll = legacy;
-                    migratedLegacyBroll = true;
-                }
+                if (legacy is not null) config.Broll = legacy;
             }
             catch { }
         }
 
         config.Normalize();
-        if (migratedLegacyBroll && config.SaveCore())
+
+        // Materialize the unified schema for every existing config. This is intentionally
+        // safe to call from updater validation: a publish candidate without config files
+        // does not create persistent configuration, while an installed legacy config is migrated.
+        var needsUnifiedSave = configExists && !hasBrollSection || legacyExists;
+        if (needsUnifiedSave && config.SaveCore() && legacyExists)
         {
             try { File.Delete(LegacyBrollConfigPath); }
             catch { }
