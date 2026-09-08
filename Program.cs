@@ -7,13 +7,25 @@ namespace YouTubeSubs;
 
 internal static class Program
 {
-    public const string Version = "2.19";
+    public const string Version = "2.20";
     private const int GuiPort = 45871;
 
     [STAThread]
     private static int Main(string[] args)
     {
-        if (!ProjectLaunchOptions.TryParse(args, out var launch, out var argumentError))
+        GlobalBrollLaunchOptions? globalBroll = null;
+        ProjectLaunchOptions? projectLaunch = null;
+        string? argumentError;
+
+        if (GlobalBrollLaunchOptions.IsRequested(args))
+        {
+            if (!GlobalBrollLaunchOptions.TryParse(args, out globalBroll, out argumentError))
+            {
+                MessageBox.Show(argumentError, "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return 2;
+            }
+        }
+        else if (!ProjectLaunchOptions.TryParse(args, out projectLaunch, out argumentError))
         {
             MessageBox.Show(argumentError, "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 2;
@@ -23,12 +35,47 @@ internal static class Program
         var config = AppConfig.Load();
         AppLog.Initialize(config.Logging);
         AppLog.Write("STARTUP", $"Main entered version={Version} mode=gui elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
-        if (launch is not null) AppLog.Write("PROJECT", $"launch mode={launch.ModeLabel} id={launch.RequestedId} project={launch.Project}");
+        if (projectLaunch is not null) AppLog.Write("PROJECT", $"launch mode={projectLaunch.ModeLabel} id={projectLaunch.RequestedId} project={projectLaunch.Project}");
+        if (globalBroll is not null) AppLog.Write("BROLL", $"launch mode={globalBroll.ModeLabel} result_file={globalBroll.ResultFile ?? "<none>"}");
         ApplicationConfiguration.Initialize();
         AppLog.Write("STARTUP", $"WinForms initialized elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
-        var result = RunGui(config, startup, launch);
+
+        int result;
+        if (globalBroll is not null) result = RunGlobalBrollGui(config, startup, globalBroll);
+        else result = RunGui(config, startup, projectLaunch);
+
         AppLog.SessionEnd("application-exit");
         return result;
+    }
+
+    private static int RunGlobalBrollGui(AppConfig config, Stopwatch startup, GlobalBrollLaunchOptions launch)
+    {
+        GlobalBrollConfig brollConfig;
+        string targetDirectory;
+        try
+        {
+            brollConfig = GlobalBrollConfig.Load();
+            targetDirectory = GlobalBrollStorage.ResolveTargetDirectory(brollConfig);
+            AppLog.Write("BROLL", $"target={targetDirectory}");
+        }
+        catch (Exception ex)
+        {
+            AppLog.Exception("global BROLL startup", ex);
+            try { GlobalBrollResult.Write(launch, "error", message: ex.Message); }
+            catch (Exception resultEx) { AppLog.Exception("global BROLL startup result write", resultEx); }
+            MessageBox.Show(ex.Message, "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return 4;
+        }
+
+        AppLog.Write("STARTUP", $"GlobalBrollForm construction begin elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        using var form = new GlobalBrollForm(config, brollConfig, launch, targetDirectory);
+        AppLog.Write("STARTUP", $"GlobalBrollForm constructed elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        form.HandleCreated += (_, _) => AppLog.Write("STARTUP", $"global BROLL window handle created elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        form.Load += (_, _) => AppLog.Write("STARTUP", $"global BROLL form Load elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        form.Shown += (_, _) => AppLog.Write("STARTUP", $"global BROLL form Shown elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        Application.Run(form);
+        AppLog.Write("STARTUP", $"Global BROLL Application.Run returned exit_code={form.ExitCode} elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        return form.ExitCode;
     }
 
     private static int RunGui(AppConfig config, Stopwatch startup, ProjectLaunchOptions? launch)

@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## 2.20 - 08.09.2026
+
+- Add dedicated GUI global BROLL modes `ytsubs.exe --broll:play` and `ytsubs.exe --broll:loop` while keeping the normal GUI and project-media workflows unchanged.
+- Define global `PLAY` as MP4 video with audio and global `LOOP` as silent MP4 video.
+- Store global BROLL settings separately in repository-local `config/broll.json`, created automatically with ordered D: and N: BROLL roots plus numeric-ID and clip-name limits.
+- Select the first configured BROLL root that is currently available instead of creating a missing media root automatically.
+- Allocate the smallest free positive numeric BROLL ID, format it with a configurable minimum width of three digits, and stop with an explicit error when the configured ID range is exhausted.
+- Finalize downloads collision-safely: if another process claims the selected ID during the download, retry allocation without overwriting the existing file.
+- Reuse the existing short-title naming logic and extend the suggested title with additional source-title words when needed to make the textual clip name more distinctive; duplicate text remains allowed because the numeric ID is authoritative.
+- Add optional `--result-file=<path>` output for automation callers. YouTubeSubs writes a UTF-16 INI result containing status, mode, numeric ID, output file, and error message so AutoHotkey can read it natively with `IniRead`.
+- Keep the result-file location caller-controlled, including `%TEMP%`; write the result atomically and never use it as persistent application state.
+- Run global BROLL mode as its own GUI process instead of forwarding it through the normal single-instance window, so an AutoHotkey `RunWait` caller can reliably wait until that exact download workflow exits.
+- Preserve the exact 2.19 development state on branch `restore/2.19-before-global-broll`.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.20.
+
 ## 2.19 - 04.09.2026
 
 - Move project-media ID collision handling from a modal popup into the main project window.
@@ -200,7 +215,7 @@ All notable changes to this project are documented here.
 - Fix the `upgrade.cmd` CLI synchronization validation introduced in 2.02.
 - Remove the fragile nested PowerShell/cmd.exe quoting that could produce a parser error while still allowing the upgrade to continue.
 - Run the synchronization check directly through `cmd.exe`, capture its complete output, and compare it byte-for-byte with the expected command order.
-- Treat any execution error or output mismatch as a hard validation failure and leave the previously installed `ytsubs.exe` untouched.
+- Treat any execution error or output mismatch as a hard validation failure and leave the previously installed executable untouched.
 - Keep the verified 2.02 console-subsystem CLI behavior unchanged.
 
 ## 2.02 - 28.08.2026
