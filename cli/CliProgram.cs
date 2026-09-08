@@ -28,37 +28,22 @@ internal static class CliProgram
             string? video = null; string format = "txt"; string? lang = null; string? output = null;
             for (var i = 0; i < args.Length; i++)
             {
-                var arg = args[i];
-                if (arg == "--format" && i + 1 < args.Length) { format = args[++i].TrimStart('.').ToLowerInvariant(); continue; }
-                if (arg == "--lang" && i + 1 < args.Length) { lang = args[++i]; continue; }
-                if ((arg == "-o" || arg == "--output") && i + 1 < args.Length) { output = args[++i]; continue; }
-                if (arg.StartsWith('-')) { Console.Error.WriteLine($"Unknown option: {arg}"); return 2; }
-                if (video is null) { video = arg; continue; }
-                Console.Error.WriteLine($"Unexpected argument: {arg}"); return 2;
+                switch (args[i])
+                {
+                    case "--format": if (++i >= args.Length) throw new ArgumentException("--format requires a value."); format = args[i].ToLowerInvariant(); if (format is not ("srt" or "sub" or "txt" or "vtt")) throw new ArgumentException("Invalid --format value."); break;
+                    case "--lang": if (++i >= args.Length) throw new ArgumentException("--lang requires a value."); lang = args[i]; break;
+                    case "-o": case "--output": if (++i >= args.Length) throw new ArgumentException("--output requires a value."); output = args[i]; break;
+                    case "--version": Console.Out.WriteLine($"ytsubs-cli {Version}"); return 0;
+                    default: if (args[i].StartsWith('-')) throw new ArgumentException($"Unknown option '{args[i]}'."); if (video is not null) throw new ArgumentException("Only one video URL or ID may be supplied."); video = args[i]; break;
+                }
             }
-            if (video is null) { Console.Error.WriteLine("Missing YouTube URL or Video ID."); return 2; }
-            if (format is not ("srt" or "sub" or "txt" or "vtt")) { Console.Error.WriteLine("Format must be srt, sub, txt, or vtt."); return 2; }
-
-            var service = new YoutubeService();
-            var info = await service.AnalyzeAsync(video, null, CancellationToken.None);
-            var chosen = service.SelectTranscript(info, lang);
-            if (chosen is null) { Console.Error.WriteLine("Requested subtitles/language are not available."); return 3; }
-            var text = await service.DownloadTranscriptAsync(chosen, format, CancellationToken.None);
-            if (string.IsNullOrWhiteSpace(output))
-            {
-                Console.Out.Write(text);
-                return 0;
-            }
-            var full = Path.GetFullPath(output);
-            var directory = Path.GetDirectoryName(full);
-            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
-            await File.WriteAllTextAsync(full, text, new UTF8Encoding(false));
-            return 0;
+            if (string.IsNullOrWhiteSpace(video)) throw new ArgumentException("video is required"); var service = new YoutubeService(); var info = await service.AnalyzeAsync(video, null, CancellationToken.None); var text = await service.DownloadAndFormatAsync(info, format, lang, null, CancellationToken.None);
+            if (output is not null) await File.WriteAllTextAsync(output, text, new UTF8Encoding(false)); else { Console.Out.Write(text); if (!text.EndsWith(Environment.NewLine, StringComparison.Ordinal)) Console.Out.WriteLine(); } return 0;
         }
-        catch (ArgumentException ex) { Console.Error.WriteLine(ex.Message); return 2; }
-        catch (InvalidOperationException ex) { Console.Error.WriteLine(ex.Message); return 3; }
-        catch (UnauthorizedAccessException ex) { Console.Error.WriteLine(ex.Message); return 5; }
-        catch (IOException ex) { Console.Error.WriteLine(ex.Message); return 5; }
-        catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 4; }
+        catch (ArgumentException ex) { Console.Error.WriteLine($"ytsubs-cli: {ex.Message}"); return 2; }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("subtitle", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("caption", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("language", StringComparison.OrdinalIgnoreCase)) { Console.Error.WriteLine($"ytsubs-cli: {ex.Message}"); return 3; }
+        catch (IOException ex) { Console.Error.WriteLine($"ytsubs-cli: unable to write output: {ex.Message}"); return 5; }
+        catch (UnauthorizedAccessException ex) { Console.Error.WriteLine($"ytsubs-cli: unable to write output: {ex.Message}"); return 5; }
+        catch (Exception ex) { Console.Error.WriteLine($"ytsubs-cli: unable to retrieve subtitles: {ex.Message}"); return 4; }
     }
 }
