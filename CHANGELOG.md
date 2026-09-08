@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented here.
 
+## 2.23 - 08.09.2026
+
+- Fix the 2.22 upgrade path so an existing repository-local `config/config.json` is actually rewritten to the unified schema during installed CLI validation, without requiring the GUI to be started manually.
+- Preserve every existing main configuration value and learned `phase_seconds` entry while importing legacy BROLL settings under the `broll` section.
+- Delete legacy `config/broll.json` only after the unified `config.json` has been written successfully.
+- Keep migration idempotent and safe for publish-candidate validation: no configuration is created when neither legacy nor installed configuration exists.
+- Preserve the exact 2.22 development state on branch `restore/2.22-before-upgrade-config-migration`.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.23.
+
+## 2.22 - 08.09.2026
+
+- Unify global BROLL settings into the repository-local `config/config.json` under a dedicated `broll` section instead of maintaining a second configuration file.
+- Add configurable `broll.video_extensions` with common movie formats and use it when scanning occupied global BROLL IDs and existing clip names.
+- Treat configured video extensions case-insensitively while continuing to create new YouTubeSubs media as MP4.
+- Preserve legacy `config/broll.json` values during migration and remove the legacy file only after a successful unified-config write.
+- Preserve the exact 2.21 development state on branch `restore/2.21-before-unified-config`.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.22.
+
 ## 2.21 - 08.09.2026
 
 - Treat the one-second precision of the From/To GUI as part of full-video detection so an untouched full range is not misclassified as a partial cut when the source duration contains fractional seconds.
@@ -16,7 +34,7 @@ All notable changes to this project are documented here.
 - Store global BROLL settings separately in repository-local `config/broll.json`, created automatically with ordered D: and N: BROLL roots plus numeric-ID and clip-name limits.
 - Select the first configured BROLL root that is currently available instead of creating a missing media root automatically.
 - Allocate the smallest free positive numeric BROLL ID, format it with a configurable minimum width of three digits, and stop with an explicit error when the configured ID range is exhausted.
-- Finalize downloads collision-safely: if another process claims the selected ID during the download, retry allocation without overwriting the existing file.
+- Finalize downloads collision-safely: if another YouTubeSubs process claims the selected ID during the download, retry allocation without overwriting the existing file.
 - Reuse the existing short-title naming logic and extend the suggested title with additional source-title words when needed to make the textual clip name more distinctive; duplicate text remains allowed because the numeric ID is authoritative.
 - Add optional `--result-file=<path>` output for automation callers. YouTubeSubs writes a UTF-16 INI result containing status, mode, numeric ID, output file, and error message so AutoHotkey can read it natively with `IniRead`.
 - Keep the result-file location caller-controlled, including `%TEMP%`; write the result atomically and never use it as persistent application state.
