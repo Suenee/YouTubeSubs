@@ -38,19 +38,25 @@ internal static class Program
         if (projectLaunch is not null) AppLog.Write("PROJECT", $"launch mode={projectLaunch.ModeLabel} id={projectLaunch.RequestedId} project={projectLaunch.Project}");
         if (globalBroll is not null) AppLog.Write("BROLL", $"launch mode={globalBroll.ModeLabel} result_file={globalBroll.ResultFile ?? "<none>"}");
         ApplicationConfiguration.Initialize();
-        return globalBroll is not null ? RunGlobalBrollGui(config, globalBroll, startup) : RunGui(config, projectLaunch, startup);
+        AppLog.Write("STARTUP", $"WinForms initialized elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+
+        int result;
+        if (globalBroll is not null) result = RunGlobalBrollGui(config, startup, globalBroll);
+        else result = RunGui(config, startup, projectLaunch);
+
+        AppLog.SessionEnd("application-exit");
+        return result;
     }
 
-    private static int RunGlobalBrollGui(AppConfig config, GlobalBrollLaunchOptions launch, Stopwatch startup)
+    private static int RunGlobalBrollGui(AppConfig config, Stopwatch startup, GlobalBrollLaunchOptions launch)
     {
+        GlobalBrollConfig brollConfig;
+        string targetDirectory;
         try
         {
-            var brollConfig = GlobalBrollConfig.Load();
-            var targetDirectory = GlobalBrollStorage.ResolveTargetDirectory(brollConfig);
-            AppLog.Write("BROLL", $"root={targetDirectory} elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
-            using var form = new GlobalBrollForm(config, brollConfig, launch, targetDirectory);
-            Application.Run(form);
-            return form.ExitCode;
+            brollConfig = GlobalBrollConfig.Load();
+            targetDirectory = GlobalBrollStorage.ResolveTargetDirectory(brollConfig);
+            AppLog.Write("BROLL", $"target={targetDirectory}");
         }
         catch (Exception ex)
         {
@@ -60,61 +66,83 @@ internal static class Program
             MessageBox.Show(ex.Message, "YouTubeSubs", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 4;
         }
+
+        AppLog.Write("STARTUP", $"GlobalBrollForm construction begin elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        using var form = new GlobalBrollForm(config, brollConfig, launch, targetDirectory);
+        AppLog.Write("STARTUP", $"GlobalBrollForm constructed elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        form.HandleCreated += (_, _) => AppLog.Write("STARTUP", $"global BROLL window handle created elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        form.Load += (_, _) => AppLog.Write("STARTUP", $"global BROLL form Load elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        form.Shown += (_, _) => AppLog.Write("STARTUP", $"global BROLL form Shown elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        Application.Run(form);
+        AppLog.Write("STARTUP", $"Global BROLL Application.Run returned exit_code={form.ExitCode} elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        return form.ExitCode;
     }
 
-    private static int RunGui(AppConfig config, ProjectLaunchOptions? projectLaunch, Stopwatch startup)
+    private static int RunGui(AppConfig config, Stopwatch startup, ProjectLaunchOptions? launch)
     {
-        using var client = new UdpClient(AddressFamily.InterNetwork);
+        using var socket = new UdpClient(AddressFamily.InterNetwork);
         try
         {
-            client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, false);
-            client.Client.Bind(new IPEndPoint(IPAddress.Loopback, GuiPort));
+            socket.Client.Bind(new IPEndPoint(IPAddress.Loopback, GuiPort));
+            AppLog.Write("STARTUP", $"single-instance socket ready elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
         }
         catch (SocketException)
         {
+            AppLog.Write("STARTUP", "existing instance detected; forwarding activation");
             try
             {
                 using var sender = new UdpClient(AddressFamily.InterNetwork);
-                var payload = Encoding.UTF8.GetBytes(projectLaunch is null ? "ACTIVATE" : projectLaunch.ToIpcMessage());
-                sender.Send(payload, payload.Length, new IPEndPoint(IPAddress.Loopback, GuiPort));
-                return 0;
+                var message = launch?.ToIpcMessage() ?? "ACTIVATE";
+                sender.Send(Encoding.UTF8.GetBytes(message), new IPEndPoint(IPAddress.Loopback, GuiPort));
             }
-            catch
-            {
-                return 4;
-            }
+            catch (Exception ex) { AppLog.Exception("single-instance activation", ex); }
+            return 0;
         }
 
-        using var form = new MainForm(config, projectLaunch);
-        UiInteractionFix.Apply(form);
+        AppLog.Write("STARTUP", $"MainForm construction begin elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        using var form = new MainForm(config, launch);
+        AppLog.Write("STARTUP", $"MainForm constructed elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
         UiLayoutFix.Apply(form);
-        UiDiagnostics.Attach(form, config);
-        var listener = Task.Run(async () =>
+        UiInteractionFix.Attach(form);
+        UiDiagnostics.Attach(form);
+        AppLog.Write("STARTUP", $"diagnostics attached elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        form.HandleCreated += (_, _) => AppLog.Write("STARTUP", $"window handle created elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        form.Load += (_, _) => AppLog.Write("STARTUP", $"form Load elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        form.Shown += (_, _) =>
         {
-            while (!form.IsDisposed)
+            AppLog.Write("STARTUP", $"form Shown elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+            form.BeginInvoke(new Action(() => AppLog.Write("STARTUP", $"first UI idle elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms")));
+        };
+        using var cancellation = new CancellationTokenSource();
+        form.FormClosed += (_, _) => cancellation.Cancel();
+        _ = Task.Run(async () =>
+        {
+            while (!cancellation.IsCancellationRequested)
             {
                 try
                 {
-                    var result = await client.ReceiveAsync();
+                    var result = await socket.ReceiveAsync(cancellation.Token);
                     var message = Encoding.UTF8.GetString(result.Buffer);
-                    if (message == "ACTIVATE")
+                    if (message == "ACTIVATE" && !form.IsDisposed)
                     {
-                        if (!form.IsDisposed) form.BeginInvoke(form.ActivateFront);
+                        AppLog.Write("IPC", "ACTIVATE received");
+                        form.BeginInvoke(new Action(form.ActivateFront));
                     }
-                    else if (ProjectLaunchOptions.TryParseIpcMessage(message, out var incoming) && incoming is not null)
+                    else if (ProjectLaunchOptions.TryFromIpcMessage(message, out var forwarded) && forwarded is not null && !form.IsDisposed)
                     {
-                        if (!form.IsDisposed) form.BeginInvoke(new Action(() => form.ApplyProjectLaunch(incoming)));
+                        AppLog.Write("IPC", $"project launch received mode={forwarded.ModeLabel} id={forwarded.RequestedId} project={forwarded.Project}");
+                        form.BeginInvoke(new Action(() => form.ApplyProjectLaunch(forwarded)));
                     }
                 }
+                catch (OperationCanceledException) { break; }
                 catch (ObjectDisposedException) { break; }
-                catch (SocketException) { if (form.IsDisposed) break; }
-                catch (Exception ex) { AppLog.Exception("single-instance listener", ex); }
+                catch (SocketException) when (cancellation.IsCancellationRequested) { break; }
+                catch (Exception ex) { AppLog.Exception("IPC receive", ex); }
             }
         });
-        AppLog.Write("STARTUP", $"MainForm ready elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
+        AppLog.Write("STARTUP", $"Application.Run enter elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
         Application.Run(form);
-        client.Close();
-        try { listener.Wait(TimeSpan.FromMilliseconds(500)); } catch { }
+        AppLog.Write("STARTUP", $"Application.Run returned elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
         return 0;
     }
 }
