@@ -5,11 +5,18 @@ namespace YouTubeSubs;
 
 internal static class CliProgram
 {
-    private const string Version = "2.22";
+    private const string Version = "2.23";
     private static int Main(string[] args)
     {
         if (args.Length == 0) return LaunchGui();
-        if (args.Length == 1 && args[0] == "--version") { Console.Out.WriteLine($"ytsubs-cli {Version}"); return 0; }
+        if (args.Length == 1 && args[0] == "--version")
+        {
+            // The updater validates the installed CLI after deployment. Loading the config here
+            // makes that validation also complete any pending repository-local config migration.
+            _ = AppConfig.Load();
+            Console.Out.WriteLine($"ytsubs-cli {Version}");
+            return 0;
+        }
         var config = AppConfig.Load();
         AppLog.Initialize(config.Logging);
         AppLog.Write("CLI", $"start version={Version} args={string.Join(' ', args)}");
