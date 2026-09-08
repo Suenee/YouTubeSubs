@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## 2.21 - 08.09.2026
+
+- Treat the one-second precision of the From/To GUI as part of full-video detection so an untouched full range is not misclassified as a partial cut when the source duration contains fractional seconds.
+- Keep full-video downloads on the direct yt-dlp path and reserve the preroll, forced-keyframe, FFmpeg re-encode, and exact-cut validation pipeline for real trims of at least one second.
+- Preserve the exact 2.20 development state on branch `restore/2.20-before-full-video-fix`.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.21.
+
 ## 2.20 - 08.09.2026
 
 - Add dedicated GUI global BROLL modes `ytsubs.exe --broll:play` and `ytsubs.exe --broll:loop` while keeping the normal GUI and project-media workflows unchanged.
