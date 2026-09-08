@@ -1,6 +1,6 @@
 # Global BROLL workflow
 
-YouTubeSubs 2.20 adds two GUI-only global BROLL launch modes for automation callers such as AutoHotkey SlideMarker.
+YouTubeSubs provides two GUI-only global BROLL launch modes for automation callers such as AutoHotkey SlideMarker.
 
 ```cmd
 ytsubs.exe --broll:play
@@ -9,22 +9,32 @@ ytsubs.exe --broll:loop
 
 `--broll:play` downloads one MP4 with video and audio. `--broll:loop` downloads a silent MP4. Both modes open a dedicated YouTubeSubs GUI where the operator enters the YouTube URL or video ID, reviews the generated clip name, and optionally adjusts the From/To range.
 
-Global BROLL media is stored in the first available root listed in `config\broll.json`. The file is created automatically on first use with these defaults:
+Global BROLL settings live in the common repository-local `config\config.json` under the `broll` object. Version 2.22 automatically migrates the legacy `config\broll.json` into this object without replacing existing application settings, then removes the legacy file only after the merged configuration was saved successfully.
+
+Default BROLL settings:
 
 ```json
 {
-  "roots": [
-    "D:\\WORK\\Sueneé Universe\\BROLL",
-    "N:\\WORK\\Sueneé Universe\\BROLL"
-  ],
-  "max_id": 9999,
-  "id_min_digits": 3,
-  "clip_name_max_words": 4,
-  "unique_name_max_words": 8
+  "broll": {
+    "roots": [
+      "D:\\WORK\\Sueneé Universe\\BROLL",
+      "N:\\WORK\\Sueneé Universe\\BROLL"
+    ],
+    "max_id": 9999,
+    "id_min_digits": 3,
+    "clip_name_max_words": 4,
+    "unique_name_max_words": 8,
+    "video_extensions": [
+      ".mp4", ".mov", ".m4v", ".mkv", ".avi", ".wmv",
+      ".webm", ".mpg", ".mpeg", ".m2ts", ".mts", ".ts"
+    ]
+  }
 }
 ```
 
 The application does not create a missing global media root. It uses the first configured root that already exists and is accessible. Reorder `roots` if a different drive should win when more than one path is available.
+
+ID occupancy and existing-name detection use every file whose extension is listed in `broll.video_extensions`, case-insensitively. The extension may be configured with or without the leading dot; normalization stores it with the dot. YouTubeSubs still creates new downloads as MP4. The extension list only defines which existing media files reserve BROLL IDs and participate in name detection.
 
 Files are numbered with the smallest free positive ID. With `001`, `002`, `003`, and `005` already present, the next file receives ID `4` and is saved with a minimum three-digit prefix, for example `004 - Mars wheel Curiosity.mp4`. The numeric ID is authoritative. YouTubeSubs also tries to make the generated textual name more distinctive by adding further words from the original YouTube title when the shorter suggestion already exists, but duplicate text is not treated as an error.
 
@@ -59,7 +69,7 @@ status=error
 mode=loop
 id=
 file=
-message=No configured global BROLL directory is available. Check config\broll.json.
+message=No configured global BROLL directory is available. Check config\config.json -> broll.roots.
 ```
 
 If the operator closes the global BROLL GUI before a successful download, `status=cancelled` is written when possible.
