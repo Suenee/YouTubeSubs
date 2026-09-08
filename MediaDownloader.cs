@@ -100,8 +100,10 @@ internal static class MediaDownloader
         "--postprocessor-args", "ffmpeg:-progress pipe:2 -stats_period 0.5",
     };
 
+    private static readonly TimeSpan FullRangeUiTolerance = TimeSpan.FromSeconds(1);
+
     private static bool IsPartial(TimeSpan start, TimeSpan end, TimeSpan duration) =>
-        start > TimeSpan.FromMilliseconds(250) || end < duration - TimeSpan.FromMilliseconds(250);
+        start >= FullRangeUiTolerance || end <= duration - FullRangeUiTolerance;
 
     private static void AddSection(List<string> args, TimeSpan start, TimeSpan end, TimeSpan duration, bool forceKeyframes)
     {
