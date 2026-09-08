@@ -1,8 +1,8 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 
-$UpgradeRevision = '2.20-runner-01'
-$ExpectedVersion = '2.20'
+$UpgradeRevision = '2.21-runner-01'
+$ExpectedVersion = '2.21'
 $Branch = if ($env:YTSUBS_BRANCH) { $env:YTSUBS_BRANCH } else { 'devel' }
 $Repo = if ($env:YTSUBS_REPO_DIR) { $env:YTSUBS_REPO_DIR } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $Repo = [IO.Path]::GetFullPath($Repo).TrimEnd('\')
