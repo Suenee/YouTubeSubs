@@ -1,8 +1,52 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace YouTubeSubs;
+
+internal sealed class BrollSettings
+{
+    public List<string> Roots { get; set; } = new()
+    {
+        @"D:\WORK\Sueneé Universe\BROLL",
+        @"N:\WORK\Sueneé Universe\BROLL",
+    };
+    public int MaxId { get; set; } = 9999;
+    public int IdMinDigits { get; set; } = 3;
+    public int ClipNameMaxWords { get; set; } = 4;
+    public int UniqueNameMaxWords { get; set; } = 8;
+    public List<string> VideoExtensions { get; set; } = new()
+    {
+        ".mp4", ".mov", ".m4v", ".mkv", ".avi", ".wmv", ".webm", ".mpg", ".mpeg", ".m2ts", ".mts", ".ts",
+    };
+    [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
+
+    public void Normalize()
+    {
+        Roots = Roots.Where(path => !string.IsNullOrWhiteSpace(path)).Select(path => path.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (Roots.Count == 0)
+        {
+            Roots.Add(@"D:\WORK\Sueneé Universe\BROLL");
+            Roots.Add(@"N:\WORK\Sueneé Universe\BROLL");
+        }
+        MaxId = Math.Clamp(MaxId, 1, 999999);
+        IdMinDigits = Math.Clamp(IdMinDigits, 1, 8);
+        ClipNameMaxWords = Math.Clamp(ClipNameMaxWords, 1, 12);
+        UniqueNameMaxWords = Math.Clamp(UniqueNameMaxWords, ClipNameMaxWords, 20);
+        VideoExtensions = VideoExtensions
+            .Where(extension => !string.IsNullOrWhiteSpace(extension))
+            .Select(extension => extension.Trim().ToLowerInvariant())
+            .Select(extension => extension.StartsWith('.') ? extension : "." + extension)
+            .Where(extension => extension.Length > 1 && extension.Skip(1).All(ch => char.IsLetterOrDigit(ch)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (VideoExtensions.Count == 0)
+            VideoExtensions.AddRange(new[] { ".mp4", ".mov", ".m4v", ".mkv", ".avi", ".wmv", ".webm", ".mpg", ".mpeg", ".m2ts", ".mts", ".ts" });
+    }
+
+    public bool IsVideoFile(string path) => VideoExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase);
+}
 
 internal sealed class AppConfig
 {
@@ -14,20 +58,75 @@ internal sealed class AppConfig
     public int ClipNameMaxWords { get; set; } = 4;
     public string AvMarkerHtml { get; set; } = "VLC AV {id}";
     public string BrollMarkerHtml { get; set; } = "VLC LOOP {id}";
+    public BrollSettings Broll { get; set; } = new();
     public Dictionary<string, double> PhaseSeconds { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
         ["metadata"] = 0.8, ["transcripts"] = 1.0, ["subtitle-download"] = 0.8, ["subtitle-format"] = 0.1,
         ["subtitle-save"] = 0.1, ["video-download"] = 10.0, ["video-postprocess"] = 4.0, ["audio-download"] = 5.0,
         ["audio-convert"] = 3.0, ["media-finalize"] = 0.5,
     };
+    [JsonExtensionData] public Dictionary<string, JsonElement>? Extra { get; set; }
+
     public static string AppDirectory { get { var path = Path.Combine(AppContext.BaseDirectory, "config"); Directory.CreateDirectory(path); return path; } }
     public static string ConfigPath => Path.Combine(AppDirectory, "config.json");
+    private static string LegacyBrollConfigPath => Path.Combine(AppDirectory, "broll.json");
+
     public static AppConfig Load()
     {
-        try { if (!File.Exists(ConfigPath)) return new AppConfig(); var config = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath), JsonOptions) ?? new AppConfig(); config.Normalize(); return config; }
-        catch { return new AppConfig(); }
+        AppConfig config;
+        var hasBrollSection = false;
+        try
+        {
+            if (File.Exists(ConfigPath))
+            {
+                var json = File.ReadAllText(ConfigPath);
+                using var document = JsonDocument.Parse(json);
+                hasBrollSection = document.RootElement.TryGetProperty("broll", out _);
+                config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions) ?? new AppConfig();
+            }
+            else config = new AppConfig();
+        }
+        catch { config = new AppConfig(); }
+
+        var migratedLegacyBroll = false;
+        if (!hasBrollSection && File.Exists(LegacyBrollConfigPath))
+        {
+            try
+            {
+                var legacy = JsonSerializer.Deserialize<BrollSettings>(File.ReadAllText(LegacyBrollConfigPath), JsonOptions);
+                if (legacy is not null)
+                {
+                    config.Broll = legacy;
+                    migratedLegacyBroll = true;
+                }
+            }
+            catch { }
+        }
+
+        config.Normalize();
+        if (migratedLegacyBroll && config.SaveCore())
+        {
+            try { File.Delete(LegacyBrollConfigPath); }
+            catch { }
+        }
+        return config;
     }
-    public void Save() { Normalize(); try { File.WriteAllText(ConfigPath, JsonSerializer.Serialize(this, JsonOptions)); } catch { } }
+
+    public void Save() { Normalize(); _ = SaveCore(); }
+
+    private bool SaveCore()
+    {
+        var temp = ConfigPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temp, JsonSerializer.Serialize(this, JsonOptions), new UTF8Encoding(false));
+            File.Move(temp, ConfigPath, true);
+            return true;
+        }
+        catch { return false; }
+        finally { try { if (File.Exists(temp)) File.Delete(temp); } catch { } }
+    }
+
     private void Normalize()
     {
         Logging = Logging.Trim().ToLowerInvariant(); if (Logging is not ("off" or "single" or "all")) Logging = "single";
@@ -36,6 +135,8 @@ internal sealed class AppConfig
         ClipNameMaxWords = Math.Clamp(ClipNameMaxWords, 1, 12);
         if (string.IsNullOrWhiteSpace(AvMarkerHtml) || !AvMarkerHtml.Contains("{id}", StringComparison.Ordinal)) AvMarkerHtml = "VLC AV {id}";
         if (string.IsNullOrWhiteSpace(BrollMarkerHtml) || !BrollMarkerHtml.Contains("{id}", StringComparison.Ordinal)) BrollMarkerHtml = "VLC LOOP {id}";
+        Broll ??= new BrollSettings();
+        Broll.Normalize();
         var defaults = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
         {
             ["metadata"] = 0.8, ["transcripts"] = 1.0, ["subtitle-download"] = 0.8, ["subtitle-format"] = 0.1,
