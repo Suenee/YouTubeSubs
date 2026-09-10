@@ -19,35 +19,17 @@ internal static class UiDiagnostics
     {
         switch (control)
         {
-            case Button button:
-                button.Click += (_, _) => AppLog.Write($"UI click button={Safe(button.Text)}");
-                break;
-            case CheckBox checkBox:
-                checkBox.CheckedChanged += (_, _) => AppLog.Write($"UI checkbox text={Safe(checkBox.Text)} checked={checkBox.Checked}");
-                break;
-            case ComboBox combo:
-                combo.SelectedIndexChanged += (_, _) => AppLog.Write($"UI combo selected={Safe(combo.SelectedItem?.ToString())}");
-                break;
-            case TextBox textBox:
-                textBox.Leave += (_, _) => AppLog.Write($"UI textbox leave value={Safe(textBox.Text)}");
-                break;
-            case LinkLabel link:
-                link.LinkClicked += (_, _) => AppLog.Write($"UI link click text={Safe(link.Text)}");
-                break;
+            case Button button: button.Click += (_, _) => AppLog.Write($"UI click button={Safe(button.Text)}"); break;
+            case CheckBox checkBox: checkBox.CheckedChanged += (_, _) => AppLog.Write($"UI checkbox text={Safe(checkBox.Text)} checked={checkBox.Checked}"); break;
+            case ComboBox combo: combo.SelectedIndexChanged += (_, _) => AppLog.Write($"UI combo selected={Safe(combo.SelectedItem?.ToString())}"); break;
+            case TextBox textBox: textBox.Leave += (_, _) => AppLog.Write($"UI textbox leave value={Safe(textBox.Text)}"); break;
+            case LinkLabel link: link.LinkClicked += (_, _) => AppLog.Write($"UI link click text={Safe(link.Text)}"); break;
         }
-
-        control.ControlAdded += (_, e) =>
-        {
-            if (e.Control is not null) AttachRecursive(e.Control);
-        };
+        control.ControlAdded += (_, e) => { if (e.Control is not null) AttachRecursive(e.Control); };
         foreach (Control child in control.Controls) AttachRecursive(child);
     }
 
-    private static string Safe(string? value)
-    {
-        if (string.IsNullOrEmpty(value)) return "<empty>";
-        return value.Replace("\r", " ").Replace("\n", " ");
-    }
+    private static string Safe(string? value) => string.IsNullOrEmpty(value) ? "<empty>" : value.Replace("\r", " ").Replace("\n", " ");
 }
 
 internal static class UiInteractionFix
@@ -60,13 +42,11 @@ internal static class UiInteractionFix
             timeBox.KeyDown += (_, e) =>
             {
                 if (e.KeyCode is not (Keys.Enter or Keys.Return)) return;
-                e.SuppressKeyPress = true;
-                e.Handled = true;
+                e.SuppressKeyPress = true; e.Handled = true;
                 AppLog.Write($"UI time normalize requested by Enter value={timeBox.Text}");
                 form.ActiveControl = null;
             };
         }
-
         AttachLanguageState(form, controls);
         AttachCancelCloseState(form, controls);
         AttachBackgroundCommit(form, form);
@@ -78,13 +58,11 @@ internal static class UiInteractionFix
         var audio = controls.OfType<CheckBox>().FirstOrDefault(c => c.Text == "Audio");
         var language = controls.OfType<ComboBox>().FirstOrDefault(c => c.Width != 72);
         if (subtitles is null || audio is null || language is null) return;
-
         void Update()
         {
             var projectMode = GetPrivateField<object>(form, "_projectLaunch") is not null;
             language.Enabled = !projectMode && ((subtitles.Enabled && subtitles.Checked) || audio.Checked);
         }
-
         subtitles.CheckedChanged += (_, _) => Update();
         subtitles.EnabledChanged += (_, _) => Update();
         audio.CheckedChanged += (_, _) => Update();
@@ -104,23 +82,11 @@ internal static class UiInteractionFix
 
         var completed = false;
         var resetInProgress = false;
+        var cancelMouseDown = false;
 
-        input.TextChanged += (_, _) =>
+        void ResetForm()
         {
-            if (resetInProgress || string.IsNullOrWhiteSpace(input.Text)) return;
-            completed = false;
-            cancel.Text = "Cancel";
-        };
-
-        cancel.Click += (_, _) =>
-        {
-            if (completed || string.Equals(cancel.Text, "Close", StringComparison.Ordinal))
-            {
-                form.Close();
-                return;
-            }
-
-            if (GetPrivateField<bool>(form, "_busy")) return;
+            if (resetInProgress || GetPrivateField<bool>(form, "_busy")) return;
             resetInProgress = true;
             try
             {
@@ -133,11 +99,35 @@ internal static class UiInteractionFix
                     audio.Checked = false;
                 }
                 InvokePrivate(form, "ClearState", false);
+                completed = false;
                 cancel.Text = "Cancel";
                 AppLog.Write("UI", "form reset by Cancel");
                 input.Focus();
             }
             finally { resetInProgress = false; }
+        }
+
+        input.TextChanged += (_, _) =>
+        {
+            if (resetInProgress || string.IsNullOrWhiteSpace(input.Text)) return;
+            completed = false;
+            cancel.Text = "Cancel";
+        };
+
+        cancel.MouseDown += (_, _) => cancelMouseDown = true;
+        form.FormClosing += (_, e) =>
+        {
+            if (!cancelMouseDown) return;
+            cancelMouseDown = false;
+            if (completed || string.Equals(cancel.Text, "Close", StringComparison.Ordinal)) return;
+            e.Cancel = true;
+            ResetForm();
+        };
+        cancel.Click += (_, _) =>
+        {
+            cancelMouseDown = false;
+            if (completed || string.Equals(cancel.Text, "Close", StringComparison.Ordinal)) { form.Close(); return; }
+            ResetForm();
         };
 
         foreach (var action in controls.OfType<Button>().Where(button => button.Text is "Download" or "Replace" or "Move"))
@@ -177,24 +167,19 @@ internal static class UiInteractionFix
     {
         var result = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         if (!Directory.Exists(directory)) return result;
-        try
-        {
-            foreach (var file in Directory.EnumerateFiles(directory))
-                result[file] = File.GetLastWriteTimeUtc(file);
-        }
-        catch { }
+        try { foreach (var file in Directory.EnumerateFiles(directory)) result[file] = File.GetLastWriteTimeUtc(file); } catch { }
         return result;
     }
 
     private static bool HasNewCompletedOutput(string directory, Dictionary<string, DateTime> before, DateTime started)
     {
         if (!Directory.Exists(directory)) return false;
-        var completedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".srt", ".sub", ".txt", ".vtt", ".mp4", ".mp3" };
+        var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".srt", ".sub", ".txt", ".vtt", ".mp4", ".mp3" };
         try
         {
             foreach (var file in Directory.EnumerateFiles(directory))
             {
-                if (!completedExtensions.Contains(Path.GetExtension(file))) continue;
+                if (!extensions.Contains(Path.GetExtension(file))) continue;
                 var modified = File.GetLastWriteTimeUtc(file);
                 if (modified < started.AddSeconds(-1)) continue;
                 if (!before.TryGetValue(file, out var oldModified) || modified > oldModified) return true;
@@ -233,7 +218,6 @@ internal static class UiInteractionFix
                 }
             };
         }
-
         foreach (Control child in control.Controls) AttachBackgroundCommit(child, form);
     }
 
@@ -252,31 +236,14 @@ internal static class UiLayoutFix
     public static void Apply(Form form)
     {
         var stopwatch = Stopwatch.StartNew();
-
         var rootTable = form.Controls.OfType<TableLayoutPanel>().FirstOrDefault();
         if (rootTable is not null)
         {
-            form.SuspendLayout();
-            form.Controls.Remove(rootTable);
-            form.Padding = Padding.Empty;
-
-            rootTable.Margin = Padding.Empty;
-            rootTable.Padding = Padding.Empty;
-
-            var shell = new FlowLayoutPanel
-            {
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                Margin = Padding.Empty,
-                Padding = new Padding(14),
-            };
-            shell.Controls.Add(rootTable);
-            form.Controls.Add(shell);
-            form.ResumeLayout(true);
+            form.SuspendLayout(); form.Controls.Remove(rootTable); form.Padding = Padding.Empty;
+            rootTable.Margin = Padding.Empty; rootTable.Padding = Padding.Empty;
+            var shell = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = Padding.Empty, Padding = new Padding(14) };
+            shell.Controls.Add(rootTable); form.Controls.Add(shell); form.ResumeLayout(true);
         }
-
         var checkboxes = Descendants(form).OfType<CheckBox>().ToArray();
         if (checkboxes.Length >= 3)
         {
@@ -284,61 +251,27 @@ internal static class UiLayoutFix
             var outputRow = outputs?.Parent as TableLayoutPanel;
             if (outputs is not null && outputRow is not null)
             {
-                outputs.AutoSize = false;
-                outputs.Height = 24;
-                outputs.WrapContents = false;
-                outputs.Margin = Padding.Empty;
-                outputs.Padding = Padding.Empty;
-                outputs.Dock = DockStyle.Fill;
-
-                outputRow.AutoSize = false;
-                outputRow.Height = 24;
-                outputRow.MinimumSize = new Size(390, 24);
-                outputRow.MaximumSize = new Size(390, 24);
-                outputRow.Margin = Padding.Empty;
-                outputRow.Padding = Padding.Empty;
-                outputRow.RowCount = 1;
-                outputRow.RowStyles.Clear();
-                outputRow.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-
+                outputs.AutoSize = false; outputs.Height = 24; outputs.WrapContents = false; outputs.Margin = Padding.Empty; outputs.Padding = Padding.Empty; outputs.Dock = DockStyle.Fill;
+                outputRow.AutoSize = false; outputRow.Height = 24; outputRow.MinimumSize = new Size(390, 24); outputRow.MaximumSize = new Size(390, 24); outputRow.Margin = Padding.Empty; outputRow.Padding = Padding.Empty; outputRow.RowCount = 1; outputRow.RowStyles.Clear(); outputRow.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
                 foreach (Control child in outputRow.Controls)
                 {
                     child.Margin = Padding.Empty;
-                    if (child is FlowLayoutPanel flow)
-                    {
-                        flow.WrapContents = false;
-                        flow.Height = 24;
-                        flow.Padding = Padding.Empty;
-                    }
+                    if (child is FlowLayoutPanel flow) { flow.WrapContents = false; flow.Height = 24; flow.Padding = Padding.Empty; }
                 }
-
                 if (outputRow.Parent is TableLayoutPanel table)
                 {
                     var row = table.GetRow(outputRow);
-                    if (row >= 0)
-                    {
-                        while (table.RowStyles.Count <= row) table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-                        table.RowStyles[row] = new RowStyle(SizeType.Absolute, 24);
-                    }
-
-                    var times = table.Controls.Cast<Control>()
-                        .OfType<FlowLayoutPanel>()
-                        .FirstOrDefault(flow => flow.Controls.OfType<Label>().Any(label => label.Text == "From") && flow.Controls.OfType<Label>().Any(label => label.Text == "To"));
+                    if (row >= 0) { while (table.RowStyles.Count <= row) table.RowStyles.Add(new RowStyle(SizeType.AutoSize)); table.RowStyles[row] = new RowStyle(SizeType.Absolute, 24); }
+                    var times = table.Controls.Cast<Control>().OfType<FlowLayoutPanel>().FirstOrDefault(flow => flow.Controls.OfType<Label>().Any(label => label.Text == "From") && flow.Controls.OfType<Label>().Any(label => label.Text == "To"));
                     if (times is not null)
                     {
-                        times.Margin = Padding.Empty;
-                        times.Padding = Padding.Empty;
+                        times.Margin = Padding.Empty; times.Padding = Padding.Empty;
                         var timesRow = table.GetRow(times);
-                        if (timesRow >= 0)
-                        {
-                            while (table.RowStyles.Count <= timesRow) table.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-                            table.RowStyles[timesRow] = new RowStyle(SizeType.AutoSize);
-                        }
+                        if (timesRow >= 0) { while (table.RowStyles.Count <= timesRow) table.RowStyles.Add(new RowStyle(SizeType.AutoSize)); table.RowStyles[timesRow] = new RowStyle(SizeType.AutoSize); }
                     }
                 }
             }
         }
-
         AppLog.Write($"UI layout normalized elapsed={stopwatch.Elapsed.TotalMilliseconds:0.0}ms");
     }
 
