@@ -1,8 +1,8 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 
-$UpgradeRevision = '2.23-runner-01'
-$ExpectedVersion = '2.23'
+$UpgradeRevision = '2.24-runner-01'
+$ExpectedVersion = '2.24'
 $Branch = if ($env:YTSUBS_BRANCH) { $env:YTSUBS_BRANCH } else { 'devel' }
 $Repo = if ($env:YTSUBS_REPO_DIR) { $env:YTSUBS_REPO_DIR } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $Repo = [IO.Path]::GetFullPath($Repo).TrimEnd('\')
@@ -17,40 +17,15 @@ New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
 if (Test-Path -LiteralPath $LegacyLogPath) { Remove-Item -LiteralPath $LegacyLogPath -Force -ErrorAction SilentlyContinue }
 Set-Content -LiteralPath $LogPath -Value '' -Encoding UTF8
 
-function Write-UpgradeLine {
-    param([string]$Text, [ConsoleColor]$Color = [ConsoleColor]::Gray)
-    try { Write-Host $Text -ForegroundColor $Color } catch { Write-Host $Text }
-    Add-Content -LiteralPath $LogPath -Value $Text -Encoding UTF8
-}
+function Write-UpgradeLine { param([string]$Text, [ConsoleColor]$Color = [ConsoleColor]::Gray); try { Write-Host $Text -ForegroundColor $Color } catch { Write-Host $Text }; Add-Content -LiteralPath $LogPath -Value $Text -Encoding UTF8 }
 function Set-Phase { param([string]$Name) $script:Phase = $Name; Write-UpgradeLine ''; Write-UpgradeLine ("=== {0} ===" -f $Name) }
-function Invoke-Native {
-    param([Parameter(Mandatory=$true)][string]$File, [Parameter(Mandatory=$true)][string[]]$Arguments, [switch]$AllowFailure)
-    $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    try { & $File @Arguments 2>&1 | ForEach-Object { Write-UpgradeLine ([string]$_) }; $code = $LASTEXITCODE } finally { $ErrorActionPreference = $old }
-    if ($code -ne 0 -and -not $AllowFailure) { throw ("Command failed with exit code {0}: {1} {2}" -f $code, $File, ($Arguments -join ' ')) }; return $code
-}
-function Invoke-NativeCapture {
-    param([Parameter(Mandatory=$true)][string]$File, [Parameter(Mandatory=$true)][string[]]$Arguments)
-    $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    try { $output = @(& $File @Arguments 2>&1 | ForEach-Object { [string]$_ }); $code = $LASTEXITCODE } finally { $ErrorActionPreference = $old }
-    return [pscustomobject]@{ ExitCode = $code; Output = $output }
-}
+function Invoke-Native { param([Parameter(Mandatory=$true)][string]$File, [Parameter(Mandatory=$true)][string[]]$Arguments, [switch]$AllowFailure); $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'; try { & $File @Arguments 2>&1 | ForEach-Object { Write-UpgradeLine ([string]$_) }; $code = $LASTEXITCODE } finally { $ErrorActionPreference = $old }; if ($code -ne 0 -and -not $AllowFailure) { throw ("Command failed with exit code {0}: {1} {2}" -f $code, $File, ($Arguments -join ' ')) }; return $code }
+function Invoke-NativeCapture { param([Parameter(Mandatory=$true)][string]$File, [Parameter(Mandatory=$true)][string[]]$Arguments); $old = $ErrorActionPreference; $ErrorActionPreference = 'Continue'; try { $output = @(& $File @Arguments 2>&1 | ForEach-Object { [string]$_ }); $code = $LASTEXITCODE } finally { $ErrorActionPreference = $old }; return [pscustomobject]@{ ExitCode = $code; Output = $output } }
 function Resolve-DotNet { $command = Get-Command dotnet.exe -ErrorAction SilentlyContinue; if ($command) { return $command.Source }; $candidate = Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'; if (Test-Path -LiteralPath $candidate) { return $candidate }; return $null }
 function Test-DotNet10 { param([string]$DotNet) if (-not $DotNet) { return $false }; $result = Invoke-NativeCapture $DotNet @('--list-sdks'); if ($result.ExitCode -ne 0) { return $false }; return [bool]($result.Output | Where-Object { $_ -match '^10\.' } | Select-Object -First 1) }
-function Stop-RunningApplication {
-    $target = Join-Path $Repo 'ytsubs.exe'; if (-not (Test-Path -LiteralPath $target)) { return }; $targetFull = [IO.Path]::GetFullPath($target); $matches = @()
-    Get-Process -Name 'ytsubs' -ErrorAction SilentlyContinue | ForEach-Object { try { if ([string]::Equals([IO.Path]::GetFullPath($_.Path), $targetFull, [StringComparison]::OrdinalIgnoreCase)) { $matches += $_ } } catch { } }
-    if ($matches.Count -eq 0) { return }; $script:WasRunning = $true; Write-UpgradeLine 'YouTubeSubs is running; requesting shutdown before deployment.'
-    foreach ($process in $matches) { try { [void]$process.CloseMainWindow() } catch { } }; $deadline = [DateTime]::UtcNow.AddSeconds(5)
-    do { Start-Sleep -Milliseconds 200; $alive = @($matches | Where-Object { try { -not $_.HasExited } catch { $false } }) } while ($alive.Count -gt 0 -and [DateTime]::UtcNow -lt $deadline)
-    if ($alive.Count -gt 0) { $script:HadWarning = $true; Write-UpgradeLine 'WARNING: Graceful shutdown timed out; forcing YouTubeSubs to stop.' Yellow; foreach ($process in $alive) { try { $process.Kill() } catch { } }; Start-Sleep -Milliseconds 300 }
-}
+function Stop-RunningApplication { $target = Join-Path $Repo 'ytsubs.exe'; if (-not (Test-Path -LiteralPath $target)) { return }; $targetFull = [IO.Path]::GetFullPath($target); $matches = @(); Get-Process -Name 'ytsubs' -ErrorAction SilentlyContinue | ForEach-Object { try { if ([string]::Equals([IO.Path]::GetFullPath($_.Path), $targetFull, [StringComparison]::OrdinalIgnoreCase)) { $matches += $_ } } catch { } }; if ($matches.Count -eq 0) { return }; $script:WasRunning = $true; Write-UpgradeLine 'YouTubeSubs is running; requesting shutdown before deployment.'; foreach ($process in $matches) { try { [void]$process.CloseMainWindow() } catch { } }; $deadline = [DateTime]::UtcNow.AddSeconds(5); do { Start-Sleep -Milliseconds 200; $alive = @($matches | Where-Object { try { -not $_.HasExited } catch { $false } }) } while ($alive.Count -gt 0 -and [DateTime]::UtcNow -lt $deadline); if ($alive.Count -gt 0) { $script:HadWarning = $true; Write-UpgradeLine 'WARNING: Graceful shutdown timed out; forcing YouTubeSubs to stop.' Yellow; foreach ($process in $alive) { try { $process.Kill() } catch { } }; Start-Sleep -Milliseconds 300 } }
 function Get-PeSubsystem { param([string]$Path) $bytes = [IO.File]::ReadAllBytes($Path); $pe = [BitConverter]::ToInt32($bytes, 0x3c); return [BitConverter]::ToUInt16($bytes, $pe + 92) }
-function Repair-BootstrapChanges {
-    param([string]$GitPath); $status = Invoke-NativeCapture $GitPath @('-C', $Repo, 'status', '--porcelain', '--untracked-files=no'); if ($status.ExitCode -ne 0) { throw 'Unable to inspect tracked local changes.' }; if ($status.Output.Count -eq 0) { return }
-    $bootstrapChanged = @(); foreach ($line in $status.Output) { if ($line.Length -lt 4) { continue }; $path = $line.Substring(3).Trim().Trim('"'); if (@('upgrade.cmd', 'upgrade.ps1') -contains $path) { $bootstrapChanged += $path } }
-    if ($bootstrapChanged.Count -eq 0) { return }; $bootstrapChanged = @($bootstrapChanged | Sort-Object -Unique); Write-UpgradeLine ("Bootstrap file change detected: {0}" -f ($bootstrapChanged -join ', ')) Yellow; Write-UpgradeLine 'Restoring updater bootstrap files from the current repository commit before synchronization.'; Invoke-Native $GitPath (@('-C', $Repo, 'checkout', 'HEAD', '--') + $bootstrapChanged)
-}
+function Repair-BootstrapChanges { param([string]$GitPath); $status = Invoke-NativeCapture $GitPath @('-C', $Repo, 'status', '--porcelain', '--untracked-files=no'); if ($status.ExitCode -ne 0) { throw 'Unable to inspect tracked local changes.' }; if ($status.Output.Count -eq 0) { return }; $bootstrapChanged = @(); foreach ($line in $status.Output) { if ($line.Length -lt 4) { continue }; $path = $line.Substring(3).Trim().Trim('"'); if (@('upgrade.cmd', 'upgrade.ps1') -contains $path) { $bootstrapChanged += $path } }; if ($bootstrapChanged.Count -eq 0) { return }; $bootstrapChanged = @($bootstrapChanged | Sort-Object -Unique); Write-UpgradeLine ("Bootstrap file change detected: {0}" -f ($bootstrapChanged -join ', ')) Yellow; Write-UpgradeLine 'Restoring updater bootstrap files from the current repository commit before synchronization.'; Invoke-Native $GitPath (@('-C', $Repo, 'checkout', 'HEAD', '--') + $bootstrapChanged) }
 
 try {
     Write-UpgradeLine '============================================================'; Write-UpgradeLine 'YouTubeSubs upgrade diagnostic log'; Write-UpgradeLine ("Upgrade revision: {0}" -f $UpgradeRevision); Write-UpgradeLine ("Started:          {0}" -f (Get-Date -Format 'dd.MM.yyyy HH:mm:ss.fff')); Write-UpgradeLine ("Repository:       {0}" -f $Repo); Write-UpgradeLine ("Branch:           {0}" -f $Branch); Write-UpgradeLine 'Runner:           temporary PowerShell runner; upgrade.cmd is launcher only'; Write-UpgradeLine '============================================================'
