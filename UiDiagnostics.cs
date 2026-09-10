@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 
 namespace YouTubeSubs;
 
@@ -53,7 +54,8 @@ internal static class UiInteractionFix
 {
     public static void Attach(Form form)
     {
-        foreach (var timeBox in Descendants(form).OfType<TimeTextBox>())
+        var controls = Descendants(form).ToArray();
+        foreach (var timeBox in controls.OfType<TimeTextBox>())
         {
             timeBox.KeyDown += (_, e) =>
             {
@@ -65,7 +67,157 @@ internal static class UiInteractionFix
             };
         }
 
+        AttachLanguageState(form, controls);
+        AttachCancelCloseState(form, controls);
         AttachBackgroundCommit(form, form);
+    }
+
+    private static void AttachLanguageState(Form form, Control[] controls)
+    {
+        var subtitles = controls.OfType<CheckBox>().FirstOrDefault(c => c.Text == "Subtitles");
+        var audio = controls.OfType<CheckBox>().FirstOrDefault(c => c.Text == "Audio");
+        var language = controls.OfType<ComboBox>().FirstOrDefault(c => c.Width != 72);
+        if (subtitles is null || audio is null || language is null) return;
+
+        void Update()
+        {
+            var projectMode = GetPrivateField<object>(form, "_projectLaunch") is not null;
+            language.Enabled = !projectMode && ((subtitles.Enabled && subtitles.Checked) || audio.Checked);
+        }
+
+        subtitles.CheckedChanged += (_, _) => Update();
+        subtitles.EnabledChanged += (_, _) => Update();
+        audio.CheckedChanged += (_, _) => Update();
+        audio.EnabledChanged += (_, _) => Update();
+        form.Activated += (_, _) => Update();
+        Update();
+    }
+
+    private static void AttachCancelCloseState(Form form, Control[] controls)
+    {
+        var cancel = controls.OfType<Button>().FirstOrDefault(button => button.Text == "Cancel");
+        var input = controls.OfType<TextBox>().FirstOrDefault(box => box is not TimeTextBox && box.Width == 390);
+        var subtitles = controls.OfType<CheckBox>().FirstOrDefault(c => c.Text == "Subtitles");
+        var video = controls.OfType<CheckBox>().FirstOrDefault(c => c.Text == "Video");
+        var audio = controls.OfType<CheckBox>().FirstOrDefault(c => c.Text == "Audio");
+        if (cancel is null || input is null || subtitles is null || video is null || audio is null) return;
+
+        var completed = false;
+        var resetInProgress = false;
+
+        input.TextChanged += (_, _) =>
+        {
+            if (resetInProgress || string.IsNullOrWhiteSpace(input.Text)) return;
+            completed = false;
+            cancel.Text = "Cancel";
+        };
+
+        cancel.Click += (_, _) =>
+        {
+            if (completed || string.Equals(cancel.Text, "Close", StringComparison.Ordinal))
+            {
+                form.Close();
+                return;
+            }
+
+            if (GetPrivateField<bool>(form, "_busy")) return;
+            resetInProgress = true;
+            try
+            {
+                var projectMode = GetPrivateField<object>(form, "_projectLaunch") is not null;
+                input.Clear();
+                if (!projectMode)
+                {
+                    subtitles.Checked = subtitles.Enabled;
+                    video.Checked = false;
+                    audio.Checked = false;
+                }
+                InvokePrivate(form, "ClearState", false);
+                cancel.Text = "Cancel";
+                AppLog.Write("UI", "form reset by Cancel");
+                input.Focus();
+            }
+            finally { resetInProgress = false; }
+        };
+
+        foreach (var action in controls.OfType<Button>().Where(button => button.Text is "Download" or "Replace" or "Move"))
+        {
+            action.Click += async (_, _) =>
+            {
+                if (!action.Enabled) return;
+                var started = DateTime.UtcNow;
+                var before = SnapshotOutputFiles(GetLastOutputDirectory(form));
+                var sawBusy = false;
+                for (var i = 0; i < 7200 && !form.IsDisposed; i++)
+                {
+                    await Task.Delay(100);
+                    var busy = GetPrivateField<bool>(form, "_busy");
+                    sawBusy |= busy;
+                    if (!sawBusy || busy) continue;
+                    await Task.Delay(250);
+                    if (HasNewCompletedOutput(GetLastOutputDirectory(form), before, started))
+                    {
+                        completed = true;
+                        cancel.Text = "Close";
+                        AppLog.Write("UI", "successful normal download changed Cancel to Close");
+                    }
+                    break;
+                }
+            };
+        }
+    }
+
+    private static string GetLastOutputDirectory(Form form)
+    {
+        var config = GetPrivateField<object>(form, "_config");
+        return config?.GetType().GetProperty("LastOutputDirectory")?.GetValue(config) as string ?? string.Empty;
+    }
+
+    private static Dictionary<string, DateTime> SnapshotOutputFiles(string directory)
+    {
+        var result = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        if (!Directory.Exists(directory)) return result;
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(directory))
+                result[file] = File.GetLastWriteTimeUtc(file);
+        }
+        catch { }
+        return result;
+    }
+
+    private static bool HasNewCompletedOutput(string directory, Dictionary<string, DateTime> before, DateTime started)
+    {
+        if (!Directory.Exists(directory)) return false;
+        var completedExtensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".srt", ".sub", ".txt", ".vtt", ".mp4", ".mp3" };
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(directory))
+            {
+                if (!completedExtensions.Contains(Path.GetExtension(file))) continue;
+                var modified = File.GetLastWriteTimeUtc(file);
+                if (modified < started.AddSeconds(-1)) continue;
+                if (!before.TryGetValue(file, out var oldModified) || modified > oldModified) return true;
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    private static T GetPrivateField<T>(object instance, string name)
+    {
+        try
+        {
+            var value = instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(instance);
+            return value is T typed ? typed : default!;
+        }
+        catch { return default!; }
+    }
+
+    private static void InvokePrivate(object instance, string name, params object[] args)
+    {
+        try { instance.GetType().GetMethod(name, BindingFlags.Instance | BindingFlags.NonPublic)?.Invoke(instance, args); }
+        catch (Exception ex) { AppLog.Exception($"UI invoke {name}", ex); }
     }
 
     private static void AttachBackgroundCommit(Control control, Form form)
