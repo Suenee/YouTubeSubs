@@ -80,9 +80,22 @@ internal static class UiInteractionFix
         var audio = controls.OfType<CheckBox>().FirstOrDefault(c => c.Text == "Audio");
         if (cancel is null || input is null || subtitles is null || video is null || audio is null) return;
 
-        var completed = false;
         var resetInProgress = false;
         var cancelMouseDown = false;
+        var resetByCloseAttempt = false;
+
+        bool IsIdle()
+        {
+            if (GetPrivateField<object>(form, "_projectLaunch") is not null) return false;
+            if (GetPrivateField<object>(form, "_info") is not null) return false;
+            return string.IsNullOrWhiteSpace(input.Text);
+        }
+
+        void UpdateButtonState()
+        {
+            if (resetInProgress) return;
+            cancel.Text = IsIdle() ? "Close" : "Cancel";
+        }
 
         void ResetForm()
         {
@@ -99,94 +112,43 @@ internal static class UiInteractionFix
                     audio.Checked = false;
                 }
                 InvokePrivate(form, "ClearState", false);
-                completed = false;
-                cancel.Text = "Cancel";
+                cancel.Text = projectMode ? "Cancel" : "Close";
                 AppLog.Write("UI", "form reset by Cancel");
                 input.Focus();
             }
             finally { resetInProgress = false; }
         }
 
-        input.TextChanged += (_, _) =>
-        {
-            if (resetInProgress || string.IsNullOrWhiteSpace(input.Text)) return;
-            completed = false;
-            cancel.Text = "Cancel";
-        };
+        input.TextChanged += (_, _) => UpdateButtonState();
+        form.Activated += (_, _) => UpdateButtonState();
 
         cancel.MouseDown += (_, _) => cancelMouseDown = true;
         form.FormClosing += (_, e) =>
         {
             if (!cancelMouseDown) return;
             cancelMouseDown = false;
-            if (completed || string.Equals(cancel.Text, "Close", StringComparison.Ordinal)) return;
+            if (string.Equals(cancel.Text, "Close", StringComparison.Ordinal)) return;
             e.Cancel = true;
+            resetByCloseAttempt = true;
             ResetForm();
         };
         cancel.Click += (_, _) =>
         {
             cancelMouseDown = false;
-            if (completed || string.Equals(cancel.Text, "Close", StringComparison.Ordinal)) { form.Close(); return; }
+            if (resetByCloseAttempt)
+            {
+                resetByCloseAttempt = false;
+                return;
+            }
+            if (string.Equals(cancel.Text, "Close", StringComparison.Ordinal))
+            {
+                form.Close();
+                return;
+            }
             ResetForm();
         };
 
-        foreach (var action in controls.OfType<Button>().Where(button => button.Text is "Download" or "Replace" or "Move"))
-        {
-            action.Click += async (_, _) =>
-            {
-                if (!action.Enabled) return;
-                var started = DateTime.UtcNow;
-                var before = SnapshotOutputFiles(GetLastOutputDirectory(form));
-                var sawBusy = false;
-                for (var i = 0; i < 7200 && !form.IsDisposed; i++)
-                {
-                    await Task.Delay(100);
-                    var busy = GetPrivateField<bool>(form, "_busy");
-                    sawBusy |= busy;
-                    if (!sawBusy || busy) continue;
-                    await Task.Delay(250);
-                    if (HasNewCompletedOutput(GetLastOutputDirectory(form), before, started))
-                    {
-                        completed = true;
-                        cancel.Text = "Close";
-                        AppLog.Write("UI", "successful normal download changed Cancel to Close");
-                    }
-                    break;
-                }
-            };
-        }
-    }
-
-    private static string GetLastOutputDirectory(Form form)
-    {
-        var config = GetPrivateField<object>(form, "_config");
-        return config?.GetType().GetProperty("LastOutputDirectory")?.GetValue(config) as string ?? string.Empty;
-    }
-
-    private static Dictionary<string, DateTime> SnapshotOutputFiles(string directory)
-    {
-        var result = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
-        if (!Directory.Exists(directory)) return result;
-        try { foreach (var file in Directory.EnumerateFiles(directory)) result[file] = File.GetLastWriteTimeUtc(file); } catch { }
-        return result;
-    }
-
-    private static bool HasNewCompletedOutput(string directory, Dictionary<string, DateTime> before, DateTime started)
-    {
-        if (!Directory.Exists(directory)) return false;
-        var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".srt", ".sub", ".txt", ".vtt", ".mp4", ".mp3" };
-        try
-        {
-            foreach (var file in Directory.EnumerateFiles(directory))
-            {
-                if (!extensions.Contains(Path.GetExtension(file))) continue;
-                var modified = File.GetLastWriteTimeUtc(file);
-                if (modified < started.AddSeconds(-1)) continue;
-                if (!before.TryGetValue(file, out var oldModified) || modified > oldModified) return true;
-            }
-        }
-        catch { }
-        return false;
+        UpdateButtonState();
     }
 
     private static T GetPrivateField<T>(object instance, string name)
