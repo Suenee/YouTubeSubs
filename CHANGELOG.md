@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented here.
 
+## 2.25 - 14.09.2026
+
+- Simplify the main-window Cancel/Close behavior so it depends only on whether the normal form is idle, rather than trying to detect whether the preceding download completed successfully.
+- Show `Close` whenever the normal form is reset and has no active URL/video state; entering a new URL or loading a video changes the button back to `Cancel`.
+- Make `Cancel` reset the current normal-form job and leave the window open; the resulting reset state immediately offers `Close`.
+- Keep project-media mode treated as an active job state so its existing project workflow is not converted into the idle normal-form state.
+- Remove the 2.24 output-file polling used to infer successful downloads.
+- Preserve the exact 2.24 development state on branch `restore/2.24-before-idle-close-state`.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.25.
+
+## 2.24 - 14.09.2026
+
+- Disable the Language selector when neither Subtitles nor Audio is selected; video-only jobs no longer expose an irrelevant language choice.
+- Keep Language enabled when either Subtitles or Audio is selected, and keep it disabled in project-media mode.
+- Change the normal-form Cancel action from closing the application to resetting the current form state.
+- Attempt to change Cancel to Close after a successful normal download; this completion-detection approach was replaced in 2.25 by the simpler idle-state rule.
+- Preserve the exact 2.23 development state on branch `restore/2.23-before-language-cancel-close`.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.24.
+
 ## 2.23 - 08.09.2026
 
 - Fix the 2.22 upgrade path so an existing repository-local `config/config.json` is actually rewritten to the unified schema during installed CLI validation, without requiring the GUI to be started manually.
