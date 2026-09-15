@@ -7,7 +7,7 @@ namespace YouTubeSubs;
 
 internal static class Program
 {
-    public const string Version = "2.26";
+    public const string Version = "2.27";
     private const int GuiPort = 45871;
 
     [STAThread]
@@ -103,6 +103,7 @@ internal static class Program
         AppLog.Write("STARTUP", $"MainForm constructed elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
         UiLayoutFix.Apply(form);
         UiInteractionFix.Attach(form);
+        ResetTimeFieldsFix.Attach(form);
         UiDiagnostics.Attach(form);
         AppLog.Write("STARTUP", $"diagnostics attached elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
         form.HandleCreated += (_, _) => AppLog.Write("STARTUP", $"window handle created elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
