@@ -7,7 +7,7 @@ namespace YouTubeSubs;
 
 internal static class Program
 {
-    public const string Version = "2.25";
+    public const string Version = "2.26";
     private const int GuiPort = 45871;
 
     [STAThread]
@@ -67,6 +67,7 @@ internal static class Program
 
         AppLog.Write("STARTUP", $"GlobalBrollForm construction begin elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
         using var form = new GlobalBrollForm(config, config.Broll, launch, targetDirectory);
+        BrollLayoutFix.Apply(form);
         AppLog.Write("STARTUP", $"GlobalBrollForm constructed elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
         form.HandleCreated += (_, _) => AppLog.Write("STARTUP", $"global BROLL window handle created elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
         form.Load += (_, _) => AppLog.Write("STARTUP", $"global BROLL form Load elapsed={startup.Elapsed.TotalMilliseconds:0.0}ms");
