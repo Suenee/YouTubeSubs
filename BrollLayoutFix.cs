@@ -22,17 +22,17 @@ internal static class BrollLayoutFix
 
             foreach (Control control in table.Controls)
             {
-                if (control is Label label && label.Text is "Mode" or "Target" or "Next ID" or "Clip name")
+                if (control is LinkLabel status)
+                {
+                    status.Height = 32;
+                    status.Margin = Padding.Empty;
+                }
+                else if (control is Label label && label.Text is "Mode" or "Target" or "Next ID" or "Clip name")
                     label.Margin = new Padding(0, 4, 8, 0);
                 else if (control is Label)
                     control.Margin = new Padding(0, 2, 0, 0);
                 else if (control is TextBox)
                     control.Margin = new Padding(0, 2, 0, 2);
-                else if (control is LinkLabel status)
-                {
-                    status.Height = 32;
-                    status.Margin = Padding.Empty;
-                }
                 else if (control is FlowLayoutPanel flow)
                 {
                     flow.Margin = Padding.Empty;
