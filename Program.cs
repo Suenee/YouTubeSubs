@@ -7,7 +7,7 @@ namespace YouTubeSubs;
 
 internal static class Program
 {
-    public const string Version = "2.27";
+    public const string Version = "2.28";
     private const int GuiPort = 45871;
 
     [STAThread]
