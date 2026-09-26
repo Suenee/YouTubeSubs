@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here.
 
+## 2.28 - 26.09.2026
+
+- Fix updater bootstrap synchronization when `upgrade.cmd` is reported as modified solely because the repository index still contains the pre-normalization CRLF blob.
+- Normalize the tracked `upgrade.cmd` blob so `.gitattributes` can consistently provide CRLF in Windows working trees while Git stores the canonical LF form.
+- Allow a verified bootstrap-only dirty state to fast-forward safely after confirming there are no other tracked local changes; keep refusing automatic synchronization when any non-bootstrap tracked file is modified.
+- Verify the tracked working tree is clean after bootstrap repair and repository synchronization.
+- Preserve the exact 2.27 development state on branch `restore/2.27-before-bootstrap-fix`.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.28.
+
+## 2.27 - 26.09.2026
+
+- Make the normal-form Cancel reset clear both From and To time fields together with the current video/input state.
+- Keep new-video analysis responsible for repopulating the time range after a reset.
+- Preserve the exact 2.26 development state on branch `restore/2.26-before-reset-time-fields`.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.27.
+
 ## 2.25 - 14.09.2026
 
 - Simplify the main-window Cancel/Close behavior so it depends only on whether the normal form is idle, rather than trying to detect whether the preceding download completed successfully.
