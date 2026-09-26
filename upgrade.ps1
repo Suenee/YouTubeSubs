@@ -1,8 +1,8 @@
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 
-$UpgradeRevision = '2.27-runner-01'
-$ExpectedVersion = '2.27'
+$UpgradeRevision = '2.28-runner-01'
+$ExpectedVersion = '2.28'
 $Branch = if ($env:YTSUBS_BRANCH) { $env:YTSUBS_BRANCH } else { 'devel' }
 $Repo = if ($env:YTSUBS_REPO_DIR) { $env:YTSUBS_REPO_DIR } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
 $Repo = [IO.Path]::GetFullPath($Repo).TrimEnd('\')
@@ -31,10 +31,28 @@ try {
     Write-UpgradeLine '============================================================'; Write-UpgradeLine 'YouTubeSubs upgrade diagnostic log'; Write-UpgradeLine ("Upgrade revision: {0}" -f $UpgradeRevision); Write-UpgradeLine ("Started:          {0}" -f (Get-Date -Format 'dd.MM.yyyy HH:mm:ss.fff')); Write-UpgradeLine ("Repository:       {0}" -f $Repo); Write-UpgradeLine ("Branch:           {0}" -f $Branch); Write-UpgradeLine 'Runner:           temporary PowerShell runner; upgrade.cmd is launcher only'; Write-UpgradeLine '============================================================'
     Set-Location -LiteralPath $Repo; $gitCommand = Get-Command git.exe -ErrorAction SilentlyContinue; if (-not $gitCommand) { throw 'Git was not found in PATH.' }; $git = $gitCommand.Source
     Set-Phase 'REPOSITORY'; $inside = Invoke-NativeCapture $git @('-C', $Repo, 'rev-parse', '--is-inside-work-tree'); if ($inside.ExitCode -ne 0 -or -not ($inside.Output -contains 'true')) { throw 'The selected directory is not a Git working tree.' }
-    $origin = Invoke-NativeCapture $git @('-C', $Repo, 'remote', 'get-url', 'origin'); if ($origin.ExitCode -ne 0) { throw 'Git remote origin is missing.' }; Write-UpgradeLine ("Origin: {0}" -f ($origin.Output | Select-Object -First 1)); Repair-BootstrapChanges $git
-    $status = Invoke-NativeCapture $git @('-C', $Repo, 'status', '--porcelain', '--untracked-files=no'); if ($status.ExitCode -ne 0) { throw 'Unable to inspect tracked local changes.' }; if ($status.Output.Count -gt 0) { Write-UpgradeLine 'Tracked local changes:' Yellow; $status.Output | ForEach-Object { Write-UpgradeLine $_ Yellow }; throw 'Tracked local changes detected outside updater bootstrap files. Commit, stash, or revert them before upgrading.' }
+    $origin = Invoke-NativeCapture $git @('-C', $Repo, 'remote', 'get-url', 'origin'); if ($origin.ExitCode -ne 0) { throw 'Git remote origin is missing.' }; Write-UpgradeLine ("Origin: {0}" -f ($origin.Output | Select-Object -First 1))
+    $status = Invoke-NativeCapture $git @('-C', $Repo, 'status', '--porcelain', '--untracked-files=no'); if ($status.ExitCode -ne 0) { throw 'Unable to inspect tracked local changes.' }
+    $bootstrapOnly = $false
+    if ($status.Output.Count -gt 0) {
+        $nonBootstrap = @()
+        foreach ($line in $status.Output) { if ($line.Length -lt 4) { continue }; $path = $line.Substring(3).Trim().Trim('"'); if (@('upgrade.cmd', 'upgrade.ps1') -notcontains $path) { $nonBootstrap += $line } }
+        if ($nonBootstrap.Count -gt 0) { Write-UpgradeLine 'Tracked local changes:' Yellow; $status.Output | ForEach-Object { Write-UpgradeLine $_ Yellow }; throw 'Tracked local changes detected outside updater bootstrap files. Commit, stash, or revert them before upgrading.' }
+        $bootstrapOnly = $true
+        Write-UpgradeLine 'Only updater bootstrap files differ locally; they may be safely replaced by the fetched development revision.' Yellow
+    }
     Invoke-Native $git @('-C', $Repo, 'fetch', 'origin', $Branch); $local = Invoke-NativeCapture $git @('-C', $Repo, 'rev-parse', 'HEAD'); $remote = Invoke-NativeCapture $git @('-C', $Repo, 'rev-parse', ("origin/{0}" -f $Branch)); $base = Invoke-NativeCapture $git @('-C', $Repo, 'merge-base', 'HEAD', ("origin/{0}" -f $Branch)); if ($local.ExitCode -ne 0 -or $remote.ExitCode -ne 0 -or $base.ExitCode -ne 0) { throw 'Unable to compare local and remote Git commits.' }
-    if ($local.Output[0] -ne $remote.Output[0]) { if ($local.Output[0] -ne $base.Output[0]) { throw ("Local branch diverged from origin/{0}; automatic destructive reset is intentionally refused." -f $Branch) }; Invoke-Native $git @('-C', $Repo, 'merge', '--ff-only', ("origin/{0}" -f $Branch)) }
+    if ($local.Output[0] -ne $remote.Output[0]) {
+        if ($local.Output[0] -ne $base.Output[0]) { throw ("Local branch diverged from origin/{0}; automatic destructive reset is intentionally refused." -f $Branch) }
+        if ($bootstrapOnly) {
+            Write-UpgradeLine 'Fast-forwarding with a verified bootstrap-only reset to repair updater line-ending/index state.'
+            Invoke-Native $git @('-C', $Repo, 'reset', '--hard', ("origin/{0}" -f $Branch))
+        } else { Invoke-Native $git @('-C', $Repo, 'merge', '--ff-only', ("origin/{0}" -f $Branch)) }
+    } elseif ($bootstrapOnly) {
+        Write-UpgradeLine 'Restoring updater bootstrap files from the synchronized repository state.'
+        Invoke-Native $git @('-C', $Repo, 'checkout', 'HEAD', '--', 'upgrade.cmd', 'upgrade.ps1')
+    }
+    $postSyncStatus = Invoke-NativeCapture $git @('-C', $Repo, 'status', '--porcelain', '--untracked-files=no'); if ($postSyncStatus.ExitCode -ne 0) { throw 'Unable to verify tracked files after synchronization.' }; if ($postSyncStatus.Output.Count -gt 0) { Write-UpgradeLine 'Tracked changes remain after synchronization:' Yellow; $postSyncStatus.Output | ForEach-Object { Write-UpgradeLine $_ Yellow }; throw 'Repository is still dirty after updater bootstrap repair.' }
     $head = Invoke-NativeCapture $git @('-C', $Repo, 'rev-parse', 'HEAD'); $remoteNow = Invoke-NativeCapture $git @('-C', $Repo, 'rev-parse', ("origin/{0}" -f $Branch)); if ($head.ExitCode -ne 0 -or $remoteNow.ExitCode -ne 0 -or $head.Output[0] -ne $remoteNow.Output[0]) { throw 'Repository synchronization verification failed.' }; Write-UpgradeLine ("Build commit: {0}" -f $head.Output[0])
     Set-Phase 'DEPENDENCIES'; $dotnet = Resolve-DotNet
     if (-not (Test-DotNet10 $dotnet)) { Write-UpgradeLine 'Microsoft .NET 10 SDK is missing; installing the current stable SDK.' Yellow; $wingetCommand = Get-Command winget.exe -ErrorAction SilentlyContinue; if (-not $wingetCommand) { throw 'winget is unavailable, so .NET 10 SDK cannot be installed automatically.' }; Invoke-Native $wingetCommand.Source @('install', '--id', 'Microsoft.DotNet.SDK.10', '--exact', '--silent', '--accept-package-agreements', '--accept-source-agreements'); $dotnet = Resolve-DotNet; if (-not (Test-DotNet10 $dotnet)) { throw '.NET 10 SDK installation completed but SDK 10.x is still unavailable.' } }
