@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## 2.29 - 30.09.2026
+
+- Assign the GUI process a stable explicit Windows AppUserModelID (`Suenee.YouTubeSubs`) during the initial startup routine, before WinForms creates any user interface.
+- Improve Windows 10 taskbar identity and pinning behavior while preserving the existing executable icon and Windows 11 behavior.
+- Keep shell-identity initialization non-fatal so a Windows Shell API failure cannot prevent YouTubeSubs from starting.
+- Preserve the exact 2.28 development state on branch `restore/2.28-before-taskbar-pinning`.
+- Bump GUI, CLI, assemblies, and updater validation to version 2.29.
+
 ## 2.28 - 26.09.2026
 
 - Fix updater bootstrap synchronization when `upgrade.cmd` is reported as modified solely because the repository index still contains the pre-normalization CRLF blob.
