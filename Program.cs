@@ -1,18 +1,22 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace YouTubeSubs;
 
 internal static class Program
 {
-    public const string Version = "2.28";
+    public const string Version = "2.29";
+    private const string AppUserModelId = "Suenee.YouTubeSubs";
     private const int GuiPort = 45871;
 
     [STAThread]
     private static int Main(string[] args)
     {
+        InitializeWindowsShellIdentity();
+
         GlobalBrollLaunchOptions? globalBroll = null;
         ProjectLaunchOptions? projectLaunch = null;
         string? argumentError;
@@ -47,6 +51,23 @@ internal static class Program
         AppLog.SessionEnd("application-exit");
         return result;
     }
+
+    private static void InitializeWindowsShellIdentity()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        try
+        {
+            var hr = SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
+            if (hr < 0) Marshal.ThrowExceptionForHR(hr);
+        }
+        catch
+        {
+            // Startup logging is not initialized yet. Shell identity is optional and must never block launch.
+        }
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
 
     private static int RunGlobalBrollGui(AppConfig config, Stopwatch startup, GlobalBrollLaunchOptions launch)
     {
