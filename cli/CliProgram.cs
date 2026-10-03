@@ -5,34 +5,23 @@ namespace YouTubeSubs;
 
 internal static class CliProgram
 {
-    private const string Version = "2.29";
+    private const string Version = "2.30";
     private static int Main(string[] args)
     {
         if (args.Length == 0) return LaunchGui();
-        if (args.Length == 1 && args[0] == "--version")
-        {
-            // The updater validates the installed CLI after deployment. Loading the config here
-            // makes that validation also complete any pending repository-local config migration.
-            _ = AppConfig.Load();
-            Console.Out.WriteLine($"ytsubs-cli {Version}");
-            return 0;
-        }
-        var config = AppConfig.Load();
-        AppLog.Initialize(config.Logging);
-        AppLog.Write("CLI", $"start version={Version} args={string.Join(' ', args)}");
-        return RunCliAsync(args).GetAwaiter().GetResult();
+        if (args.Length == 1 && args[0] == "--version") { _ = AppConfig.Load(); Console.Out.WriteLine($"ytsubs-cli {Version}"); return 0; }
+        var config = AppConfig.Load(); AppLog.Initialize(config.Logging); AppLog.Write("CLI", $"start version={Version} args={string.Join(' ', args)}"); return RunCliAsync(args, config).GetAwaiter().GetResult();
     }
     private static int LaunchGui()
     {
         try { var guiPath = Path.Combine(AppContext.BaseDirectory, "ytsubs.exe"); if (!File.Exists(guiPath)) { Console.Error.WriteLine("ytsubs-cli: ytsubs.exe was not found next to ytsubs-cli.exe."); return 4; } Process.Start(new ProcessStartInfo { FileName = guiPath, UseShellExecute = true, WorkingDirectory = AppContext.BaseDirectory }); return 0; }
         catch (Exception ex) { Console.Error.WriteLine($"ytsubs-cli: unable to start GUI: {ex.Message}"); return 4; }
     }
-    private static async Task<int> RunCliAsync(string[] args)
+    private static async Task<int> RunCliAsync(string[] args, AppConfig config)
     {
         try
         {
-            Console.OutputEncoding = Encoding.UTF8;
-            string? video = null; string format = "txt"; string? lang = null; string? output = null;
+            Console.OutputEncoding = Encoding.UTF8; string? video = null; string format = "txt"; string? lang = null; string? output = null;
             for (var i = 0; i < args.Length; i++)
             {
                 switch (args[i])
@@ -44,7 +33,12 @@ internal static class CliProgram
                     default: if (args[i].StartsWith('-')) throw new ArgumentException($"Unknown option '{args[i]}'."); if (video is not null) throw new ArgumentException("Only one video URL or ID may be supplied."); video = args[i]; break;
                 }
             }
-            if (string.IsNullOrWhiteSpace(video)) throw new ArgumentException("video is required"); var service = new YoutubeService(); var info = await service.AnalyzeAsync(video, null, CancellationToken.None); var text = await service.DownloadAndFormatAsync(info, format, lang, null, CancellationToken.None);
+            if (string.IsNullOrWhiteSpace(video)) throw new ArgumentException("video is required");
+            var service = new YoutubeService(); var info = await service.AnalyzeAsync(video, null, CancellationToken.None);
+            var resolvedLanguage = lang ?? info.OriginalCode ?? config.LastLanguage;
+            if (!string.IsNullOrWhiteSpace(lang)) { config.LastLanguage = OriginalLanguageResolver.BaseCode(lang); config.Save(); }
+            AppLog.Write("SUBTITLE", $"cli-language requested={lang ?? "Auto"} original={info.OriginalCode ?? "<unknown>"} fallback={config.LastLanguage} resolved={resolvedLanguage}");
+            var text = await service.DownloadAndFormatAsync(info, format, resolvedLanguage, null, CancellationToken.None);
             if (output is not null) await File.WriteAllTextAsync(output, text, new UTF8Encoding(false)); else { Console.Out.Write(text); if (!text.EndsWith(Environment.NewLine, StringComparison.Ordinal)) Console.Out.WriteLine(); } return 0;
         }
         catch (ArgumentException ex) { Console.Error.WriteLine($"ytsubs-cli: {ex.Message}"); return 2; }
