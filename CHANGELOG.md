@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## 2.30 - 08.11.2026
+
+- Display measured yt-dlp download progress, transferred bytes, speed, and ETA when available.
+- Use an indeterminate progress indicator when no measured progress is available; label phase-weighted overall progress as an estimate.
+- Log yt-dlp process start/end, 15-second heartbeats, confirmed byte progress, output inactivity, and possible stalls after 60 seconds without measured progress.
+- Log GUI progress periodically; do not show 100% completion for cancelled jobs.
+- Disable unsupported Windows taskbar COM progress after the first logged failure.
+- Preserve BROLL, exact-cut, CLI, and updater behavior and synchronize GUI, CLI, assemblies, and updater version to 2.30.
+- Windows runtime validation is still required before release.
+
 ## 2.29 - 30.09.2026
 
 - Assign the GUI process a stable explicit Windows AppUserModelID (`Suenee.YouTubeSubs`) during the initial startup routine, before WinForms creates any user interface.
