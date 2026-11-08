@@ -189,13 +189,7 @@ internal static class MediaDownloader
         }, token);
         var stderr = ReadLinesAsync(process.StandardError, line => errors.Add(line), token);
 
-        try { await Task.WhenAll(stdout, stderr, process.WaitForExitAsync(token)); }
-        finally
-        {
-            heartbeatStop.Cancel();
-            try { await heartbeat; } catch (OperationCanceledException) { }
-            AppLog.Write("MEDIA END", $"tool=yt-dlp pid={process.Id} elapsed={(DateTime.UtcNow - started).TotalSeconds:0.0}s exit={(process.HasExited ? process.ExitCode.ToString(CultureInfo.InvariantCulture) : "running")} cancelled={token.IsCancellationRequested}");
-        }
+        await Task.WhenAll(stdout, stderr, process.WaitForExitAsync(token));
         token.ThrowIfCancellationRequested();
 
         if (process.ExitCode != 0)
@@ -352,7 +346,13 @@ internal static class MediaDownloader
 
         var stdout = ReadLinesAsync(process.StandardOutput, line => HandleLine(line, false), token);
         var stderr = ReadLinesAsync(process.StandardError, line => HandleLine(line, true), token);
-        await Task.WhenAll(stdout, stderr, process.WaitForExitAsync(token));
+        try { await Task.WhenAll(stdout, stderr, process.WaitForExitAsync(token)); }
+        finally
+        {
+            heartbeatStop.Cancel();
+            try { await heartbeat; } catch (OperationCanceledException) { }
+            AppLog.Write("MEDIA END", $"tool=yt-dlp pid={process.Id} elapsed={(DateTime.UtcNow - started).TotalSeconds:0.0}s exit={(process.HasExited ? process.ExitCode.ToString(CultureInfo.InvariantCulture) : "running")} cancelled={token.IsCancellationRequested}");
+        }
         token.ThrowIfCancellationRequested();
 
         if (process.ExitCode != 0)
