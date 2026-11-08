@@ -8,7 +8,7 @@ namespace YouTubeSubs;
 
 internal static class Program
 {
-    public const string Version = "2.29";
+    public const string Version = "2.30";
     private const string AppUserModelId = "Suenee.YouTubeSubs";
     private const int GuiPort = 45871;
 
