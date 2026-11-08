@@ -94,9 +94,10 @@ internal static class MediaDownloader
     private static List<string> CommonArguments() => new()
     {
         "--newline",
+        "--progress",
         "--no-playlist",
         "--ffmpeg-location", ToolsDirectory,
-        "--progress-template", "download:YTSUBS|download|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s",
+        "--progress-template", "download:YTSUBS|download|%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress.downloaded_bytes)s|%(progress.total_bytes)s|%(progress.total_bytes_estimate)s",
         "--postprocessor-args", "ffmpeg:-progress pipe:2 -stats_period 0.5",
     };
 
@@ -188,7 +189,13 @@ internal static class MediaDownloader
         }, token);
         var stderr = ReadLinesAsync(process.StandardError, line => errors.Add(line), token);
 
-        await Task.WhenAll(stdout, stderr, process.WaitForExitAsync(token));
+        try { await Task.WhenAll(stdout, stderr, process.WaitForExitAsync(token)); }
+        finally
+        {
+            heartbeatStop.Cancel();
+            try { await heartbeat; } catch (OperationCanceledException) { }
+            AppLog.Write("MEDIA END", $"tool=yt-dlp pid={process.Id} elapsed={(DateTime.UtcNow - started).TotalSeconds:0.0}s exit={(process.HasExited ? process.ExitCode.ToString(CultureInfo.InvariantCulture) : "running")} cancelled={token.IsCancellationRequested}");
+        }
         token.ThrowIfCancellationRequested();
 
         if (process.ExitCode != 0)
@@ -270,9 +277,35 @@ internal static class MediaDownloader
 
         var errors = new List<string>();
         var currentPhase = downloadPhase;
+        var started = DateTime.UtcNow;
+        long lastOutputTicks = started.Ticks, lastProgressTicks = started.Ticks, lastDownloadedBytes = -1, outputLines = 0;
+        double lastProgressPercent = -1;
+        AppLog.Write("MEDIA START", $"tool=yt-dlp pid={process.Id} phase={downloadPhase} expected_seconds={expectedDuration.TotalSeconds:0.0}");
+        using var heartbeatStop = CancellationTokenSource.CreateLinkedTokenSource(token);
+        var heartbeat = Task.Run(async () =>
+        {
+            while (!heartbeatStop.IsCancellationRequested)
+            {
+                try { await Task.Delay(TimeSpan.FromSeconds(15), heartbeatStop.Token); }
+                catch (OperationCanceledException) { break; }
+                var now = DateTime.UtcNow;
+                var idle = (now - new DateTime(Interlocked.Read(ref lastOutputTicks), DateTimeKind.Utc)).TotalSeconds;
+                var progressIdle = (now - new DateTime(Interlocked.Read(ref lastProgressTicks), DateTimeKind.Utc)).TotalSeconds;
+                var bytes = Interlocked.Read(ref lastDownloadedBytes);
+                AppLog.Write("MEDIA HEARTBEAT", $"pid={process.Id} phase={currentPhase} elapsed={(now - started).TotalSeconds:0}s output_idle={idle:0}s progress_idle={progressIdle:0}s bytes={(bytes < 0 ? "unknown" : bytes.ToString(CultureInfo.InvariantCulture))} lines={Interlocked.Read(ref outputLines)} alive={!process.HasExited}");
+                if (progressIdle >= 60 && (int)progressIdle % 60 < 15)
+                    AppLog.Write("MEDIA STALL?", $"pid={process.Id} no confirmed transfer progress for {progressIdle:0}s; process may still be active");
+            }
+        });
         void HandleLine(string line, bool isError)
         {
-            if (isError) errors.Add(line);
+            Interlocked.Exchange(ref lastOutputTicks, DateTime.UtcNow.Ticks);
+            Interlocked.Increment(ref outputLines);
+            if (isError)
+            {
+                if (errors.Count >= 50) errors.RemoveAt(0);
+                errors.Add(line);
+            }
 
             if (TryParseStructuredDownload(line, out var percent, out var detail))
             {
@@ -280,6 +313,14 @@ internal static class MediaDownloader
                 {
                     currentPhase = downloadPhase;
                     phase?.Invoke(currentPhase);
+                }
+                var bytes = ParseDownloadedBytes(line);
+                var oldBytes = Interlocked.Read(ref lastDownloadedBytes);
+                if (bytes >= 0) Interlocked.Exchange(ref lastDownloadedBytes, bytes);
+                if (bytes > oldBytes || percent > lastProgressPercent + 0.01)
+                {
+                    Interlocked.Exchange(ref lastProgressTicks, DateTime.UtcNow.Ticks);
+                    lastProgressPercent = percent;
                 }
                 progress?.Invoke(percent, detail);
                 return;
@@ -335,8 +376,21 @@ internal static class MediaDownloader
         var raw = parts[2].Replace("%", string.Empty, StringComparison.Ordinal).Trim();
         if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out percent)) return false;
         var extras = parts.Skip(3).Where(x => !string.IsNullOrWhiteSpace(x) && !string.Equals(x.Trim(), "NA", StringComparison.OrdinalIgnoreCase)).Select(x => x.Trim()).ToList();
-        detail = extras.Count == 0 ? null : string.Join("   ", extras);
+        detail = extras.Count == 0 ? null : string.Join("   ", extras.Take(2));
+        if (parts.Length > 5 && long.TryParse(parts[5].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var bytes))
+        {
+            var total = parts.Length > 6 && long.TryParse(parts[6].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var known) ? known : 0;
+            if (total <= 0 && parts.Length > 7) long.TryParse(parts[7].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out total);
+            detail = $"{bytes / 1048576.0:0.0} MiB" + (total > 0 ? $" / {total / 1048576.0:0.0} MiB" : "") + (string.IsNullOrEmpty(detail) ? "" : $"   {detail}");
+        }
         return true;
+    }
+
+    private static long ParseDownloadedBytes(string line)
+    {
+        var parts = line.Split('|');
+        return parts.Length > 5 && long.TryParse(parts[5].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var bytes)
+            ? bytes : -1;
     }
 
     private static bool TryParseLegacyDownload(string line, out double percent)
