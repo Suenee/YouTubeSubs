@@ -17,6 +17,8 @@ internal sealed class ProgressDialog : Form
     private bool _finishing;
     private double? _explicitProgress;
     private string? _detail;
+    private DateTime _lastProgressUpdate;
+    private double _lastReportedProgress = -1;
 
     public CancellationTokenSource Cancellation { get; } = new();
     public bool ExitApplication { get; private set; }
@@ -47,7 +49,7 @@ internal sealed class ProgressDialog : Form
         if (_finishing || string.Equals(_phase, name, StringComparison.OrdinalIgnoreCase)) return;
         CompletePreviousPhase();
         if (!_phases.Contains(name, StringComparer.OrdinalIgnoreCase)) _phases.Add(name);
-        _phase = name; _phaseStarted = DateTime.UtcNow; _explicitProgress = null; _detail = null;
+        _phase = name; _phaseStarted = DateTime.UtcNow; _explicitProgress = null; _detail = null; _lastReportedProgress = -1;
         _stageBar.Style = ProgressBarStyle.Marquee; _stageBar.MarqueeAnimationSpeed = 28; _text.Text = PhaseText(name); UpdateOverall();
         AppLog.Write("PHASE START", name);
     }
@@ -58,7 +60,14 @@ internal sealed class ProgressDialog : Form
         if (_finishing) return;
         _explicitProgress = Math.Clamp(percent, 0, 100); _detail = string.IsNullOrWhiteSpace(detail) ? null : detail.Trim();
         _stageBar.Style = ProgressBarStyle.Blocks; _stageBar.Value = Math.Clamp((int)Math.Round(_explicitProgress.Value), 0, 100);
-        _text.Text = $"{PhaseText(_phase)}  {_explicitProgress.Value:0}%" + (_detail is null ? string.Empty : $"   {_detail}"); UpdateOverall();
+        _text.Text = $"{PhaseText(_phase)}  {_explicitProgress.Value:0.0}%" + (_detail is null ? string.Empty : $"   {_detail}");
+        if ((DateTime.UtcNow - _lastProgressUpdate).TotalSeconds >= 15 || Math.Abs(_explicitProgress.Value - _lastReportedProgress) >= 10)
+        {
+            AppLog.Write("UI PROGRESS", $"phase={_phase} percent={_explicitProgress.Value:0.0} detail={_detail ?? "none"}");
+            _lastProgressUpdate = DateTime.UtcNow;
+            _lastReportedProgress = _explicitProgress.Value;
+        }
+        UpdateOverall();
     }
 
     public void Finish(bool learn = true)
@@ -71,8 +80,12 @@ internal sealed class ProgressDialog : Form
             if (learn) LearnPhase(_phase, elapsed);
             AppLog.Write("PHASE END", $"{_phase} elapsed={elapsed.TotalSeconds:0.000}s status={(learn ? "OK" : "CANCELLED")}");
         }
-        _finishing = true; _timer.Stop(); _stageBar.Style = ProgressBarStyle.Blocks; _stageBar.Value = 100;
-        _overallBar.Value = 100; _overallText.Text = "Overall progress  100%";
+        _finishing = true; _timer.Stop();
+        _stageBar.Style = ProgressBarStyle.Blocks;
+        _stageBar.Value = learn ? 100 : 0;
+        _overallBar.Style = ProgressBarStyle.Blocks;
+        _overallBar.Value = learn ? 100 : 0;
+        _overallText.Text = learn ? "Overall progress  100%" : "Cancelled";
         if (learn) { _config.Samples++; _config.Save(); TaskbarProgress.SetProgress(_owner, 100); }
         else TaskbarProgress.Clear(_owner);
         AppLog.Write("DIALOG END", $"title={Text} status={(learn ? "SUCCESS" : "CANCELLED")}");
@@ -99,15 +112,24 @@ internal sealed class ProgressDialog : Form
     private void UpdateOverall()
     {
         if (_phases.Count == 0) return;
-        var total = Math.Max(0.1, _phases.Sum(GetAverage)); var currentWeight = 0.0;
-        if (_phase is not null)
+        // Never infer transfer progress from elapsed wall-clock time.
+        if (!_explicitProgress.HasValue)
         {
-            var average = GetAverage(_phase); var fraction = _explicitProgress.HasValue ? _explicitProgress.Value / 100.0 : Math.Min(0.95, (DateTime.UtcNow - _phaseStarted).TotalSeconds / Math.Max(average, 0.05)); currentWeight = average * fraction;
+            _overallBar.Style = ProgressBarStyle.Marquee;
+            _overallBar.MarqueeAnimationSpeed = 28;
+            _overallText.Text = "Overall progress: waiting for measurable data...";
+            _eta.Text = "Working; no transfer percentage available yet";
+            TaskbarProgress.Clear(_owner);
+            return;
         }
-        var percent = Math.Clamp((_completedWeight + currentWeight) / total * 100.0, 0, 99.5);
-        _overallBar.Value = Math.Clamp((int)Math.Round(percent), 0, 99); _overallText.Text = $"Overall progress  {percent:0}%";
-        TaskbarProgress.SetProgress(_owner, percent);
-        _eta.Text = _config.Samples >= 3 ? $"Estimated time remaining: ~{FormatEta(Math.Max(0, total - _completedWeight - currentWeight))}" : "Learning typical processing times...";
+        var total = Math.Max(0.1, _phases.Sum(GetAverage));
+        var weight = GetAverage(_phase ?? string.Empty);
+        var estimate = Math.Clamp((_completedWeight + weight * (_explicitProgress.Value / 100.0)) / total * 100.0, 0, 99.5);
+        _overallBar.Style = ProgressBarStyle.Blocks;
+        _overallBar.Value = Math.Clamp((int)Math.Round(estimate), 0, 99);
+        _overallText.Text = $"Estimated overall progress  {estimate:0}%";
+        _eta.Text = "Current stage measured; overall estimate uses historical phase weights";
+        TaskbarProgress.SetProgress(_owner, estimate);
     }
 
     private static string PhaseText(string? name) => name switch
