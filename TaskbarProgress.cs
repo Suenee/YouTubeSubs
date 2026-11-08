@@ -17,7 +17,7 @@ internal static class TaskbarProgress
     public static void SetProgress(Form owner, double percent)
     {
         var target = ResolveTaskbarWindow(owner);
-        if (target is null) return;
+        if (target is null || _failureLogged) return;
         try
         {
             var taskbar = GetTaskbar();
@@ -32,7 +32,7 @@ internal static class TaskbarProgress
     public static void SetError(Form owner)
     {
         var target = ResolveTaskbarWindow(owner);
-        if (target is null) return;
+        if (target is null || _failureLogged) return;
         try { GetTaskbar().SetProgressState(target.Handle, Error); }
         catch (Exception ex) { LogFailure(ex); }
     }
@@ -40,7 +40,7 @@ internal static class TaskbarProgress
     public static void Clear(Form owner)
     {
         var target = ResolveTaskbarWindow(owner, requireHandle: true);
-        if (target is null) return;
+        if (target is null || _failureLogged) return;
         try { GetTaskbar().SetProgressState(target.Handle, NoProgress); }
         catch (Exception ex) { LogFailure(ex); }
     }
